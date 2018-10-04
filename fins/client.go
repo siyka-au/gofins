@@ -22,6 +22,9 @@ type Client struct {
 	sid byte
 }
 
+// ErrIncompatibleMemoryArea Error when the memory area is incompatible with the data type to be read
+var ErrIncompatibleMemoryArea = errors.New("The memory area is incompatible with the data type to be read")
+
 // NewClient creates a new Omron FINS client
 func NewClient(localAddr, plcAddr *net.UDPAddr, dst *Address, src *Address) (*Client, error) {
 	c := new(Client)
@@ -44,26 +47,6 @@ func (c *Client) Close() {
 	c.conn.Close()
 }
 
-// ReadWords Reads words from the PLC data area
-func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([]uint16, error) {
-	if checkIsWordMemoryArea(memoryArea) == false {
-		return nil, ErrIncompatibleMemoryArea
-	}
-	header := c.nextHeader()
-	command := readCommand(NewIOAddress(memoryArea, address), readCount)
-	r, e := c.sendCommand(header, command)
-	if e != nil {
-		return nil, e
-	}
-
-	data := make([]uint16, readCount, readCount)
-	for i := 0; i < int(readCount); i++ {
-		data[i] = binary.BigEndian.Uint16(r.Data()[i*2 : i*2+2])
-	}
-
-	return data, nil
-}
-
 // ReadBytes Reads a string from the PLC data area
 func (c *Client) ReadBytes(memoryArea byte, address uint16, readCount uint16) ([]byte, error) {
 	if checkIsWordMemoryArea(memoryArea) == false {
@@ -71,12 +54,44 @@ func (c *Client) ReadBytes(memoryArea byte, address uint16, readCount uint16) ([
 	}
 	header := c.nextHeader()
 	command := readCommand(NewIOAddress(memoryArea, address), readCount)
-	r, e := c.sendCommand(header, command)
+
+	ch := make(chan *Response)
+	e := c.sendAsyncCommand(header, command, func(r *Response) {
+		ch <- r
+	})
+
 	if e != nil {
 		return nil, e
 	}
 
-	return r.Data(), nil
+	response := <-ch
+
+	if response == nil {
+		return nil, errors.New("No response data")
+	}
+
+	return response.Data(), nil
+}
+
+// ReadDataAsync Reads words from the PLC data area asynchronously
+// func (c *Client) ReadBytesAsync(memoryArea byte, address uint16, readCount uint16, callback func([]byte)) error {
+// 	sid := c.incrementSid()
+// 	cmd := readDCommand(defaultHeader(c.dst, c.src, sid), startAddr, readCount)
+// 	return c.asyncCommand(sid, cmd, callback)
+// }
+
+// ReadWords Reads words from the PLC data area
+func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([]uint16, error) {
+	data, e := c.ReadBytes(memoryArea, address, readCount)
+	if e != nil {
+		return nil, e
+	}
+	wordData := make([]uint16, readCount, readCount)
+	for i := 0; i < int(readCount); i++ {
+		wordData[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
+	}
+
+	return wordData, e
 }
 
 // ReadString Reads a string from the PLC data area
@@ -255,9 +270,6 @@ func (c *Client) bitTwiddle(memoryArea byte, address uint16, bitOffset byte, val
 	return nil
 }
 
-// ErrIncompatibleMemoryArea Error when the memory area is incompatible with the data type to be read
-var ErrIncompatibleMemoryArea = errors.New("The memory area is incompatible with the data type to be read")
-
 func (c *Client) nextHeader() *Header {
 	sid := c.incrementSid()
 	header := defaultCommandHeader(c.dst, c.src, sid)
@@ -271,6 +283,31 @@ func (c *Client) incrementSid() byte {
 	c.Unlock()
 	c.resp[sid] = make(chan Frame) //clearing cell of storage for new response
 	return sid
+}
+
+func (c *Client) sendAsyncCommand(header *Header, payload Payload, callback func(*Response)) error {
+	bytes := encodeFrame(NewFrame(header, payload))
+	_, err := (*c.conn).Write(bytes)
+	if err != nil {
+		return err
+	}
+
+	asyncResponse(c.resp[header.ServiceID()], callback)
+	return nil
+}
+
+func asyncResponse(frameChannel chan Frame, callback func(*Response)) {
+	if callback != nil {
+		go func(frameChannel chan Frame, callback func(*Response)) {
+			responseFrame := <-frameChannel
+			p := responseFrame.Payload()
+			response := NewResponse(
+				p.CommandCode(),
+				binary.BigEndian.Uint16(p.Data()[0:2]),
+				p.Data()[2:])
+			callback(response)
+		}(frameChannel, callback)
+	}
 }
 
 func (c *Client) sendCommand(header *Header, payload Payload) (*Response, error) {
@@ -329,12 +366,6 @@ func checkIsBitMemoryArea(memoryArea byte) bool {
 }
 
 // @ToDo Asynchronous functions
-// ReadDataAsync reads from the PLC data area asynchronously
-// func (c *Client) ReadDataAsync(startAddr uint16, readCount uint16, callback func(resp response)) error {
-// 	sid := c.incrementSid()
-// 	cmd := readDCommand(defaultHeader(c.dst, c.src, sid), startAddr, readCount)
-// 	return c.asyncCommand(sid, cmd, callback)
-// }
 
 // WriteDataAsync writes to the PLC data area asynchronously
 // func (c *Client) WriteDataAsync(startAddr uint16, data []uint16, callback func(resp response)) error {

@@ -23,15 +23,10 @@ func NewServer(udpAddr *net.UDPAddr, addr *Address, handler CommandHandler) (*Se
 	}
 	s.conn = conn
 	s.addr = addr
-	if handler == nil {
-		s.handler = func(command *Command) *Response {
-			fmt.Printf("Null command handler: 0x%04x\n", command.CommandCode())
+	s.handler = handler
 
-			response := NewResponse(command.CommandCode(), EndCodeNotSupportedByModelVersion, []byte{})
-			return response
-		}
-	} else {
-		s.handler = handler
+	if handler == nil {
+		s.handler = defaultHandler
 	}
 
 	go func() {
@@ -77,4 +72,11 @@ func handleRequest(conn net.Conn) {
 	conn.Write([]byte("Message received."))
 	// Close the connection when you're done with it.
 	conn.Close()
+}
+
+func defaultHandler(command *Command) *Response {
+	fmt.Printf("Null command handler: 0x%04x\n", command.CommandCode())
+
+	response := NewResponse(command.CommandCode(), EndCodeNotSupportedByModelVersion, []byte{})
+	return response
 }

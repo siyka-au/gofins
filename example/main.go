@@ -10,7 +10,7 @@ import (
 func main() {
 
 	localClientAddr := &net.UDPAddr{
-		IP:   net.ParseIP("192.168.250.2"),
+		IP:   net.ParseIP("192.168.250.11"),
 		Port: 9600,
 	}
 	// localServerAddr := &net.UDPAddr{
