@@ -85,7 +85,7 @@ func defaultHeader(messageType uint8, responseRequired bool, dst *Address, src *
 }
 
 func defaultCommandHeader(dst *Address, src *Address, serviceID byte) *Header {
-	h := defaultHeader(MessageTypeCommand, true, src, dst, serviceID)
+	h := defaultHeader(MessageTypeCommand, true, dst, src, serviceID)
 	return h
 }
 

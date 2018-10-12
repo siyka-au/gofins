@@ -26,7 +26,7 @@ type Client struct {
 var ErrIncompatibleMemoryArea = errors.New("The memory area is incompatible with the data type to be read")
 
 // NewClient creates a new Omron FINS client
-func NewClient(localAddr, plcAddr *net.UDPAddr, dst *Address, src *Address) (*Client, error) {
+func NewClient(plcAddr, localAddr *net.UDPAddr, dst *Address, src *Address) (*Client, error) {
 	c := new(Client)
 	c.dst = dst
 	c.src = src
@@ -55,22 +55,12 @@ func (c *Client) ReadBytes(memoryArea byte, address uint16, readCount uint16) ([
 	header := c.nextHeader()
 	command := readCommand(NewIOAddress(memoryArea, address), readCount)
 
-	ch := make(chan *Response)
-	e := c.sendAsyncCommand(header, command, func(r *Response) {
-		ch <- r
-	})
-
+	r, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return nil, e
 	}
 
-	response := <-ch
-
-	if response == nil {
-		return nil, errors.New("No response data")
-	}
-
-	return response.Data(), nil
+	return r.Data(), nil
 }
 
 // ReadDataAsync Reads words from the PLC data area asynchronously
@@ -95,14 +85,14 @@ func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([
 }
 
 // ReadString Reads a string from the PLC data area
-func (c *Client) ReadString(memoryArea byte, address uint16, readCount uint16) (*string, error) {
+func (c *Client) ReadString(memoryArea byte, address uint16, readCount uint16) (string, error) {
 	data, e := c.ReadBytes(memoryArea, address, readCount)
 	if e != nil {
-		return nil, e
+		return "", e
 	}
 	n := bytes.Index(data, []byte{0})
 	s := string(data[:n])
-	return &s, nil
+	return s, nil
 }
 
 // ReadBits Reads bits from the PLC data area
@@ -112,7 +102,7 @@ func (c *Client) ReadBits(memoryArea byte, address uint16, bitOffset byte, readC
 	}
 	header := c.nextHeader()
 	command := readCommand(NewIOAddressWithBitOffset(memoryArea, address, bitOffset), readCount)
-	r, e := c.sendCommand(header, command)
+	r, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return nil, e
 	}
@@ -129,7 +119,7 @@ func (c *Client) ReadBits(memoryArea byte, address uint16, bitOffset byte, readC
 func (c *Client) ReadClock() (*time.Time, error) {
 	header := c.nextHeader()
 	command := NewCommand(CommandCodeClockRead, []byte{})
-	responseFrame, e := c.sendCommand(header, command)
+	responseFrame, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return nil, e
 	}
@@ -166,7 +156,7 @@ func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) erro
 		binary.BigEndian.PutUint16(bytes[i*2:i*2+2], data[i])
 	}
 	command := writeCommand(NewIOAddress(memoryArea, address), l, bytes)
-	r, e := c.sendCommand(header, command)
+	r, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return e
 	}
@@ -186,7 +176,7 @@ func (c *Client) WriteString(memoryArea byte, address uint16, itemCount uint16, 
 	bytes := make([]byte, 2*itemCount, 2*itemCount)
 	copy(bytes, s)
 	command := writeCommand(NewIOAddress(memoryArea, address), itemCount, bytes)
-	r, e := c.sendCommand(header, command)
+	r, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return e
 	}
@@ -216,7 +206,7 @@ func (c *Client) WriteBits(memoryArea byte, address uint16, bitOffset byte, data
 	}
 	command := writeCommand(NewIOAddressWithBitOffset(memoryArea, address, bitOffset), l, bytes)
 
-	r, e := c.sendCommand(header, command)
+	r, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return e
 	}
@@ -259,7 +249,7 @@ func (c *Client) bitTwiddle(memoryArea byte, address uint16, bitOffset byte, val
 	header := c.nextHeader()
 	command := writeCommand(NewIOAddressWithBitOffset(memoryArea, address, bitOffset), 1, []byte{value})
 
-	r, e := c.sendCommand(header, command)
+	r, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return e
 	}
@@ -285,45 +275,34 @@ func (c *Client) incrementSid() byte {
 	return sid
 }
 
-func (c *Client) sendAsyncCommand(header *Header, payload Payload, callback func(*Response)) error {
-	bytes := encodeFrame(NewFrame(header, payload))
-	_, err := (*c.conn).Write(bytes)
-	if err != nil {
-		return err
-	}
-
-	asyncResponse(c.resp[header.ServiceID()], callback)
-	return nil
-}
-
-func asyncResponse(frameChannel chan Frame, callback func(*Response)) {
-	if callback != nil {
-		go func(frameChannel chan Frame, callback func(*Response)) {
-			responseFrame := <-frameChannel
-			p := responseFrame.Payload()
-			response := NewResponse(
-				p.CommandCode(),
-				binary.BigEndian.Uint16(p.Data()[0:2]),
-				p.Data()[2:])
-			callback(response)
-		}(frameChannel, callback)
-	}
-}
-
-func (c *Client) sendCommand(header *Header, payload Payload) (*Response, error) {
+func (c *Client) sendCommand(header *Header, payload Payload, callback func(*Response)) (*Response, error) {
 	bytes := encodeFrame(NewFrame(header, payload))
 	_, err := (*c.conn).Write(bytes)
 	if err != nil {
 		return nil, err
 	}
 
-	responseFrame := <-c.resp[header.ServiceID()]
-	p := responseFrame.Payload()
-	response := NewResponse(
-		p.CommandCode(),
-		binary.BigEndian.Uint16(p.Data()[0:2]),
-		p.Data()[2:])
-	return response, nil
+	if callback == nil {
+		responseFrame := <-c.resp[header.ServiceID()]
+		p := responseFrame.Payload()
+		response := NewResponse(
+			p.CommandCode(),
+			binary.BigEndian.Uint16(p.Data()[0:2]),
+			p.Data()[2:])
+		return response, nil
+	}
+
+	go func(frameChannel chan Frame, callback func(*Response)) {
+		responseFrame := <-frameChannel
+		p := responseFrame.Payload()
+		response := NewResponse(
+			p.CommandCode(),
+			binary.BigEndian.Uint16(p.Data()[0:2]),
+			p.Data()[2:])
+		callback(response)
+	}(c.resp[header.ServiceID()], callback)
+
+	return nil, nil
 }
 
 func (c *Client) listenLoop() {
