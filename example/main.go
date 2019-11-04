@@ -1,42 +1,59 @@
 package main
 
 import (
-	"net"
+	"encoding/binary"
+	"fmt"
+	"math"
 
-	"github.com/siyka-au/gofins/fins"
+	"github.com/l1va/gofins/fins"
 )
 
 func main() {
 
-	localClientAddr := &net.UDPAddr{
-		IP:   net.ParseIP("192.168.250.20"),
-		Port: 9600,
-	}
-	// localServerAddr := &net.UDPAddr{
-	// 	IP:   net.ParseIP("192.168.250.3"),
-	// 	Port: 9600,
-	// }
-	plcAddr := &net.UDPAddr{
-		IP:   net.ParseIP("192.168.250.10"),
-		Port: 9600,
-	}
+	//clientAddr := fins.NewAddress("192.168.250.10", 9600, 0, 34, 0)
+	//plcAddr := fins.NewAddress("192.168.250.1", 9601, 0, 0, 0)
+	clientAddr := fins.NewAddress("127.0.0.1", 9600, 0, 34, 0)
+	plcAddr := fins.NewAddress("127.0.0.1", 9601, 0, 0, 0)
 
-	c, e := fins.NewClient(plcAddr, localClientAddr, fins.NewAddress(0, 10, 0), fins.NewAddress(0, 20, 0))
-	defer c.Close()
+	s, e := fins.NewPLCSimulator(plcAddr)
 	if e != nil {
 		panic(e)
 	}
+	defer s.Close()
 
-	// s, e := fins.NewServer(localServerAddr, fins.NewAddress(0, 3, 0))
-	// if e != nil {
-	// 	panic(e)
-	// }
-
+	c, err := fins.NewClient(clientAddr, plcAddr)
+	if err != nil {
+		panic(err)
+	}
 	defer c.Close()
-	// defer s.Close()
 
-	// z, _ := c.ReadWords(fins.MemoryAreaDMWord, 10000, 500)
-	// fmt.Println(z)
+	z, err := c.ReadWords(fins.MemoryAreaDMWord, 1000, 50)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(z)
+
+	c.WriteWords(fins.MemoryAreaDMWord, 2000, []uint16{z[0] + 1, z[1] - 1})
+
+	z, err = c.ReadWords(fins.MemoryAreaDMWord, 2000, 50)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(z)
+
+	buf := make([]byte, 8, 8)
+	binary.LittleEndian.PutUint64(buf[:], math.Float64bits(15.6))
+	err = c.WriteBytes(fins.MemoryAreaDMWord, 10, buf)
+	if err != nil {
+		panic(err)
+	}
+
+	b, err := c.ReadBytes(fins.MemoryAreaDMWord, 10, 4)
+	if err != nil {
+		panic(err)
+	}
+	floatRes := math.Float64frombits(binary.LittleEndian.Uint64(b))
+	fmt.Println("Float result:", floatRes)
 
 	// s, _ := c.ReadString(fins.MemoryAreaDMWord, 10000, 10)
 	// fmt.Println("D10000: " + *s)
@@ -65,7 +82,4 @@ func main() {
 	// 	c.WriteString(fins.MemoryAreaDMWord, 10000, 10, t.Format(time.RFC3339))
 	// })
 	// cron.Start()
-
-	for {
-	}
 }

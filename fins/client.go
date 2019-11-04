@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -12,67 +11,86 @@ import (
 	"time"
 )
 
+const DEFAULT_RESPONSE_TIMEOUT = 20 // ms
+
 // Client Omron FINS client
 type Client struct {
 	conn *net.UDPConn
-	resp []chan Frame
+	resp []chan response
 	sync.Mutex
-	dst *Address
-	src *Address
-	sid byte
+	dst               finsAddress
+	src               finsAddress
+	sid               byte
+	closed            bool
+	responseTimeoutMs time.Duration
 }
 
 // ErrIncompatibleMemoryArea Error when the memory area is incompatible with the data type to be read
 var ErrIncompatibleMemoryArea = errors.New("The memory area is incompatible with the data type to be read")
 
 // NewClient creates a new Omron FINS client
+<<<<<<< HEAD
 func NewClient(plcAddr, localAddr *net.UDPAddr, dst *Address, src *Address) (*Client, error) {
+=======
+func NewClient(localAddr, plcAddr Address) (*Client, error) {
+>>>>>>> remotes/upstream/master
 	c := new(Client)
-	c.dst = dst
-	c.src = src
+	c.dst = plcAddr.finsAddress
+	c.src = localAddr.finsAddress
+	c.responseTimeoutMs = DEFAULT_RESPONSE_TIMEOUT
 
-	conn, err := net.DialUDP("udp", localAddr, plcAddr)
+	conn, err := net.DialUDP("udp", localAddr.udpAddress, plcAddr.udpAddress)
 	if err != nil {
 		return nil, err
 	}
 	c.conn = conn
 
-	c.resp = make([]chan Frame, 256) //storage for all responses, sid is byte - only 256 values
+	c.resp = make([]chan response, 256) //storage for all responses, sid is byte - only 256 values
 	go c.listenLoop()
 	return c, nil
 }
 
+// Set response timeout duration (ms).
+// Default value: 20ms.
+// A timeout of zero can be used to block indefinitely.
+func (c *Client) SetTimeoutMs(t uint) {
+	c.responseTimeoutMs = time.Duration(t)
+}
+
 // Close Closes an Omron FINS connection
 func (c *Client) Close() {
+	c.closed = true
 	c.conn.Close()
 }
 
 // ReadBytes Reads a string from the PLC data area
 func (c *Client) ReadBytes(memoryArea byte, address uint16, readCount uint16) ([]byte, error) {
 	if checkIsWordMemoryArea(memoryArea) == false {
-		return nil, ErrIncompatibleMemoryArea
+		return nil, IncompatibleMemoryAreaError{memoryArea}
 	}
-	header := c.nextHeader()
-	command := readCommand(NewIOAddress(memoryArea, address), readCount)
-
-	r, e := c.sendCommand(header, command, nil)
+	command := readCommand(memAddr(memoryArea, address), readCount)
+	r, e := c.sendCommand(command)
+	e = checkResponse(r, e)
 	if e != nil {
 		return nil, e
 	}
 
-	return r.Data(), nil
+	data := make([]uint16, readCount, readCount)
+	for i := 0; i < int(readCount); i++ {
+		data[i] = binary.LittleEndian.Uint16(r.data[i*2 : i*2+2])
+	}
+
+	return data, nil
 }
 
-// ReadDataAsync Reads words from the PLC data area asynchronously
-// func (c *Client) ReadBytesAsync(memoryArea byte, address uint16, readCount uint16, callback func([]byte)) error {
-// 	sid := c.incrementSid()
-// 	cmd := readDCommand(defaultHeader(c.dst, c.src, sid), startAddr, readCount)
-// 	return c.asyncCommand(sid, cmd, callback)
-// }
-
-// ReadWords Reads words from the PLC data area
-func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([]uint16, error) {
-	data, e := c.ReadBytes(memoryArea, address, readCount)
+// ReadBytes Reads bytes from the PLC data area
+func (c *Client) ReadBytes(memoryArea byte, address uint16, readCount uint16) ([]byte, error) {
+	if checkIsWordMemoryArea(memoryArea) == false {
+		return nil, IncompatibleMemoryAreaError{memoryArea}
+	}
+	command := readCommand(memAddr(memoryArea, address), readCount)
+	r, e := c.sendCommand(command)
+	e = checkResponse(r, e)
 	if e != nil {
 		return nil, e
 	}
@@ -81,7 +99,7 @@ func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([
 		wordData[i] = binary.BigEndian.Uint16(data[i*2 : i*2+2])
 	}
 
-	return wordData, e
+	return r.data, nil
 }
 
 // ReadString Reads a string from the PLC data area
@@ -90,26 +108,28 @@ func (c *Client) ReadString(memoryArea byte, address uint16, readCount uint16) (
 	if e != nil {
 		return "", e
 	}
-	n := bytes.Index(data, []byte{0})
-	s := string(data[:n])
-	return s, nil
+	n := bytes.IndexByte(data, 0)
+	if n == -1 {
+		n = len(data)
+	}
+	return string(data[:n]), nil
 }
 
 // ReadBits Reads bits from the PLC data area
 func (c *Client) ReadBits(memoryArea byte, address uint16, bitOffset byte, readCount uint16) ([]bool, error) {
 	if checkIsBitMemoryArea(memoryArea) == false {
-		return nil, ErrIncompatibleMemoryArea
+		return nil, IncompatibleMemoryAreaError{memoryArea}
 	}
-	header := c.nextHeader()
-	command := readCommand(NewIOAddressWithBitOffset(memoryArea, address, bitOffset), readCount)
-	r, e := c.sendCommand(header, command, nil)
+	command := readCommand(memAddrWithBitOffset(memoryArea, address, bitOffset), readCount)
+	r, e := c.sendCommand(command)
+	e = checkResponse(r, e)
 	if e != nil {
 		return nil, e
 	}
 
 	data := make([]bool, readCount, readCount)
 	for i := 0; i < int(readCount); i++ {
-		data[i] = r.Data()[i]&0x01 > 0
+		data[i] = r.data[i]&0x01 > 0
 	}
 
 	return data, nil
@@ -117,42 +137,46 @@ func (c *Client) ReadBits(memoryArea byte, address uint16, bitOffset byte, readC
 
 // ReadClock Reads the PLC clock
 func (c *Client) ReadClock() (*time.Time, error) {
+<<<<<<< HEAD
 	header := c.nextHeader()
 	command := NewCommand(CommandCodeClockRead, []byte{})
 	responseFrame, e := c.sendCommand(header, command, nil)
+=======
+	r, e := c.sendCommand(clockReadCommand())
+	e = checkResponse(r, e)
+>>>>>>> remotes/upstream/master
 	if e != nil {
 		return nil, e
 	}
-	year, _ := decodeBCD(responseFrame.Data()[0:1])
+	year, _ := decodeBCD(r.data[0:1])
 	if year < 50 {
 		year += 2000
 	} else {
 		year += 1900
 	}
-	month, _ := decodeBCD(responseFrame.Data()[1:2])
-	day, _ := decodeBCD(responseFrame.Data()[2:3])
-	hour, _ := decodeBCD(responseFrame.Data()[3:4])
-	minute, _ := decodeBCD(responseFrame.Data()[4:5])
-	second, _ := decodeBCD(responseFrame.Data()[5:6])
+	month, _ := decodeBCD(r.data[1:2])
+	day, _ := decodeBCD(r.data[2:3])
+	hour, _ := decodeBCD(r.data[3:4])
+	minute, _ := decodeBCD(r.data[4:5])
+	second, _ := decodeBCD(r.data[5:6])
 
 	t := time.Date(
 		int(year), time.Month(month), int(day), int(hour), int(minute), int(second),
 		0, // nanosecond
 		time.Local,
 	)
-
 	return &t, nil
 }
 
 // WriteWords Writes words to the PLC data area
 func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) error {
 	if checkIsWordMemoryArea(memoryArea) == false {
-		return ErrIncompatibleMemoryArea
+		return IncompatibleMemoryAreaError{memoryArea}
 	}
-	header := c.nextHeader()
 	l := uint16(len(data))
-	bytes := make([]byte, 2*l, 2*l)
+	bts := make([]byte, 2*l, 2*l)
 	for i := 0; i < int(l); i++ {
+<<<<<<< HEAD
 		binary.BigEndian.PutUint16(bytes[i*2:i*2+2], data[i])
 	}
 	command := writeCommand(NewIOAddress(memoryArea, address), l, bytes)
@@ -162,14 +186,19 @@ func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) erro
 	}
 	if r.EndCode() != EndCodeNormalCompletion {
 		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
+=======
+		binary.LittleEndian.PutUint16(bts[i*2:i*2+2], data[i])
+>>>>>>> remotes/upstream/master
 	}
+	command := writeCommand(memAddr(memoryArea, address), l, bts)
 
-	return nil
+	return checkResponse(c.sendCommand(command))
 }
 
 // WriteString Writes a string to the PLC data area
-func (c *Client) WriteString(memoryArea byte, address uint16, itemCount uint16, s string) error {
+func (c *Client) WriteString(memoryArea byte, address uint16, s string) error {
 	if checkIsWordMemoryArea(memoryArea) == false {
+<<<<<<< HEAD
 		return ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
@@ -182,19 +211,34 @@ func (c *Client) WriteString(memoryArea byte, address uint16, itemCount uint16, 
 	}
 	if r.EndCode() != EndCodeNormalCompletion {
 		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
+=======
+		return IncompatibleMemoryAreaError{memoryArea}
+>>>>>>> remotes/upstream/master
 	}
+	bts := make([]byte, 2*len(s), 2*len(s))
+	copy(bts, s)
 
-	return nil
+	command := writeCommand(memAddr(memoryArea, address), uint16((len(s)+1)/2), bts) //TODO: test on real PLC
+
+	return checkResponse(c.sendCommand(command))
+}
+
+// WriteBytes Writes bytes array to the PLC data area
+func (c *Client) WriteBytes(memoryArea byte, address uint16, b []byte) error {
+	if checkIsWordMemoryArea(memoryArea) == false {
+		return IncompatibleMemoryAreaError{memoryArea}
+	}
+	command := writeCommand(memAddr(memoryArea, address), uint16(len(b)), b)
+	return checkResponse(c.sendCommand(command))
 }
 
 // WriteBits Writes bits to the PLC data area
 func (c *Client) WriteBits(memoryArea byte, address uint16, bitOffset byte, data []bool) error {
 	if checkIsBitMemoryArea(memoryArea) == false {
-		return ErrIncompatibleMemoryArea
+		return IncompatibleMemoryAreaError{memoryArea}
 	}
-	header := c.nextHeader()
 	l := uint16(len(data))
-	bytes := make([]byte, 0, l)
+	bts := make([]byte, 0, l)
 	var d byte
 	for i := 0; i < int(l); i++ {
 		if data[i] {
@@ -202,10 +246,11 @@ func (c *Client) WriteBits(memoryArea byte, address uint16, bitOffset byte, data
 		} else {
 			d = 0x00
 		}
-		bytes = append(bytes, d)
+		bts = append(bts, d)
 	}
-	command := writeCommand(NewIOAddressWithBitOffset(memoryArea, address, bitOffset), l, bytes)
+	command := writeCommand(memAddrWithBitOffset(memoryArea, address, bitOffset), l, bts)
 
+<<<<<<< HEAD
 	r, e := c.sendCommand(header, command, nil)
 	if e != nil {
 		return e
@@ -215,6 +260,9 @@ func (c *Client) WriteBits(memoryArea byte, address uint16, bitOffset byte, data
 	}
 
 	return nil
+=======
+	return checkResponse(c.sendCommand(command))
+>>>>>>> remotes/upstream/master
 }
 
 // SetBit Sets a bit in the PLC data area
@@ -244,26 +292,32 @@ func (c *Client) ToggleBit(memoryArea byte, address uint16, bitOffset byte) erro
 
 func (c *Client) bitTwiddle(memoryArea byte, address uint16, bitOffset byte, value byte) error {
 	if checkIsBitMemoryArea(memoryArea) == false {
-		return ErrIncompatibleMemoryArea
+		return IncompatibleMemoryAreaError{memoryArea}
 	}
-	header := c.nextHeader()
-	command := writeCommand(NewIOAddressWithBitOffset(memoryArea, address, bitOffset), 1, []byte{value})
+	mem := memoryAddress{memoryArea, address, bitOffset}
+	command := writeCommand(mem, 1, []byte{value})
 
+	return checkResponse(c.sendCommand(command))
+}
+
+<<<<<<< HEAD
 	r, e := c.sendCommand(header, command, nil)
+=======
+func checkResponse(r *response, e error) error {
+>>>>>>> remotes/upstream/master
 	if e != nil {
 		return e
 	}
-	if r.EndCode() != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
+	if r.endCode != EndCodeNormalCompletion {
+		return fmt.Errorf("error reported by destination, end code 0x%x", r.endCode)
 	}
-
 	return nil
 }
 
 func (c *Client) nextHeader() *Header {
 	sid := c.incrementSid()
-	header := defaultCommandHeader(c.dst, c.src, sid)
-	return header
+	header := defaultCommandHeader(c.src, c.dst, sid)
+	return &header
 }
 
 func (c *Client) incrementSid() byte {
@@ -271,38 +325,31 @@ func (c *Client) incrementSid() byte {
 	c.sid++
 	sid := c.sid
 	c.Unlock()
-	c.resp[sid] = make(chan Frame) //clearing cell of storage for new response
+	c.resp[sid] = make(chan response) //clearing cell of storage for new response
 	return sid
 }
 
-func (c *Client) sendCommand(header *Header, payload Payload, callback func(*Response)) (*Response, error) {
-	bytes := encodeFrame(NewFrame(header, payload))
-	_, err := (*c.conn).Write(bytes)
+func (c *Client) sendCommand(command []byte) (*response, error) {
+	header := c.nextHeader()
+	bts := encodeHeader(*header)
+	bts = append(bts, command...)
+	_, err := (*c.conn).Write(bts)
 	if err != nil {
 		return nil, err
 	}
 
-	if callback == nil {
-		responseFrame := <-c.resp[header.ServiceID()]
-		p := responseFrame.Payload()
-		response := NewResponse(
-			p.CommandCode(),
-			binary.BigEndian.Uint16(p.Data()[0:2]),
-			p.Data()[2:])
-		return response, nil
+	// if response timeout is zero, block indefinitely
+	if c.responseTimeoutMs > 0 {
+		select {
+		case resp := <-c.resp[header.serviceID]:
+			return &resp, nil
+		case <-time.After(c.responseTimeoutMs * time.Millisecond):
+			return nil, ResponseTimeoutError{c.responseTimeoutMs}
+		}
+	} else {
+		resp := <-c.resp[header.serviceID]
+		return &resp, nil
 	}
-
-	go func(frameChannel chan Frame, callback func(*Response)) {
-		responseFrame := <-frameChannel
-		p := responseFrame.Payload()
-		response := NewResponse(
-			p.CommandCode(),
-			binary.BigEndian.Uint16(p.Data()[0:2]),
-			p.Data()[2:])
-		callback(response)
-	}(c.resp[header.ServiceID()], callback)
-
-	return nil, nil
 }
 
 func (c *Client) listenLoop() {
@@ -310,18 +357,18 @@ func (c *Client) listenLoop() {
 		buf := make([]byte, 2048)
 		n, err := bufio.NewReader(c.conn).Read(buf)
 		if err != nil {
-			log.Fatal(err)
+			// do not complain when connection is closed by user
+			if !c.closed {
+				log.Fatal(err)
+			}
+			break
 		}
 
 		if n > 0 {
-			ans := decodeFrame(buf[0:n])
-			if err != nil {
-				log.Println("failed to parse response: ", err, " \nresponse: ", buf[0:n])
-			} else {
-				c.resp[ans.Header().ServiceID()] <- *ans
-			}
+			ans := decodeResponse(buf[:n])
+			c.resp[ans.header.serviceID] <- ans
 		} else {
-			log.Println("Cannot read response: ", buf)
+			log.Println("cannot read response: ", buf)
 		}
 	}
 }
@@ -329,7 +376,8 @@ func (c *Client) listenLoop() {
 func checkIsWordMemoryArea(memoryArea byte) bool {
 	if memoryArea == MemoryAreaDMWord ||
 		memoryArea == MemoryAreaARWord ||
-		memoryArea == MemoryAreaHRWord {
+		memoryArea == MemoryAreaHRWord ||
+		memoryArea == MemoryAreaWRWord {
 		return true
 	}
 	return false
@@ -338,7 +386,8 @@ func checkIsWordMemoryArea(memoryArea byte) bool {
 func checkIsBitMemoryArea(memoryArea byte) bool {
 	if memoryArea == MemoryAreaDMBit ||
 		memoryArea == MemoryAreaARBit ||
-		memoryArea == MemoryAreaHRBit {
+		memoryArea == MemoryAreaHRBit ||
+		memoryArea == MemoryAreaWRBit {
 		return true
 	}
 	return false
@@ -360,6 +409,26 @@ func checkIsBitMemoryArea(memoryArea byte) bool {
 // 	asyncResponse(c.resp[sid], callback)
 // 	return nil
 // }
+//
+//if callback == nil {
+//	p := responseFrame.Payload()			responseFrame := <-c.resp[header.ServiceID()]
+//	response := NewResponse(			p := responseFrame.Payload()
+//		p.CommandCode(),			response := NewResponse(
+//		binary.BigEndian.Uint16(p.Data()[0:2]),				p.CommandCode(),
+//		p.Data()[2:])				binary.BigEndian.Uint16(p.Data()[0:2]),
+//	return response, nil				p.Data()[2:])
+//		return response, nil
+//	}
+//
+// 	go func(frameChannel chan Frame, callback func(*Response)) {
+//		responseFrame := <-frameChannel
+//		p := responseFrame.Payload()
+//		response := NewResponse(
+//			p.CommandCode(),
+//			binary.BigEndian.Uint16(p.Data()[0:2]),
+//			p.Data()[2:])
+//		callback(response)
+//	}(c.resp[header.ServiceID()], callback)
 
 // func asyncResponse(ch chan response, callback func(r response)) {
 // 	if callback != nil {

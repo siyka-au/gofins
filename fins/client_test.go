@@ -1,109 +1,88 @@
 package fins
 
 import (
-	"fmt"
-	"log"
-	"net"
-	"strconv"
+	"encoding/binary"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestFinsClient(t *testing.T) {
-	l, err := net.Listen("tcp", ":0")
-	assert.Nil(t, err)
-	plcAddr := ":" + strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
-	l.Close()
-	fmt.Println(plcAddr)
+	clientAddr := NewAddress("", 9600, 0, 2, 0)
+	plcAddr := NewAddress("", 9601, 0, 10, 0)
 
 	toWrite := []uint16{5, 4, 3, 2, 1}
 
-	answers := map[byte]response{
-		1: makeWriteAnswer(1, true),
-		2: makeReadAnswer(2, toWrite),
-		3: makeWriteAnswer(3, false),
-		4: makeReadAnswer(4, toWrite),
+	s, e := NewPLCSimulator(plcAddr)
+	if e != nil {
+		panic(e)
 	}
-	plc := NewPLCMock(plcAddr, answers)
-	defer plc.CloseConnection()
+	defer s.Close()
 
-	c := NewClient(plcAddr)
-	defer c.CloseConnection()
-	err = c.WriteD(100, toWrite)
+	c, e := NewClient(clientAddr, plcAddr)
+	if e != nil {
+		panic(e)
+	}
+	defer c.Close()
+
+	// ------------- Test Words
+	err := c.WriteWords(MemoryAreaDMWord, 100, toWrite)
 	assert.Nil(t, err)
-	vals, err := c.ReadD(100, 5)
+
+	vals, err := c.ReadWords(MemoryAreaDMWord, 100, 5)
 	assert.Nil(t, err)
 	assert.Equal(t, toWrite, vals)
-	err = c.WriteDNoResponse(200, toWrite)
+
+	// test setting response timeout
+	c.SetTimeoutMs(50)
+	_, err = c.ReadWords(MemoryAreaDMWord, 100, 5)
 	assert.Nil(t, err)
-	vals, err = c.ReadD(200, 5)
+
+	// ------------- Test Strings
+	err = c.WriteString(MemoryAreaDMWord, 10, "ф1234")
 	assert.Nil(t, err)
-	assert.Equal(t, toWrite, vals)
-}
 
-type response struct {
-	data   []byte
-	needed bool
-}
+	v, err := c.ReadString(MemoryAreaDMWord, 12, 1)
+	assert.Nil(t, err)
+	assert.Equal(t, "12", v)
 
-func makeWriteAnswer(sid byte, respNeeded bool) response {
-	ans := make([]byte, 14)
-	ans[9] = sid
-	return response{data: ans, needed: respNeeded}
-}
+	v, err = c.ReadString(MemoryAreaDMWord, 10, 3)
+	assert.Nil(t, err)
+	assert.Equal(t, "ф1234", v)
 
-func makeReadAnswer(sid byte, data []uint16) response {
-	ans := make([]byte, 14)
-	ans[9] = sid
-	return response{data: append(ans, toBytes(data)...), needed: true}
-}
+	v, err = c.ReadString(MemoryAreaDMWord, 10, 5)
+	assert.Nil(t, err)
+	assert.Equal(t, "ф1234", v)
 
-type PLCMock struct {
-	answers map[byte]response
-	pc      net.PacketConn
-}
+	// ------------- Test Bytes
+	err = c.WriteBytes(MemoryAreaDMWord, 10, []byte{0x00, 0x00 ,0xC1 , 0xA0})
+	assert.Nil(t, err)
 
-func NewPLCMock(plcAddr string, answers map[byte]response) *PLCMock {
-	c := new(PLCMock)
-	c.answers = answers
+	b, err := c.ReadBytes(MemoryAreaDMWord, 10, 2)
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{0x00, 0x00 ,0xC1 , 0xA0}, b)
 
-	pc, err := net.ListenPacket("udp", plcAddr)
-	if err != nil {
-		log.Fatal(err)
-	}
-	c.pc = pc
+	buf := make([]byte, 8, 8)
+	binary.LittleEndian.PutUint64(buf[:], math.Float64bits(-20))
+	err = c.WriteBytes(MemoryAreaDMWord, 10, buf)
+	assert.Nil(t, err)
 
-	go c.listenLoop()
+	b, err = c.ReadBytes(MemoryAreaDMWord, 10, 4)
+	assert.Nil(t, err)
+	assert.Equal(t, []byte{0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x34, 0xc0}, b)
 
-	return c
 
-}
+	// ------------- Test Bits
+	err = c.WriteBits(MemoryAreaDMBit, 10, 2, []bool{true, false, true})
+	assert.Nil(t, err)
 
-func (c *PLCMock) CloseConnection() {
-	c.pc.Close()
-}
+	bs, err := c.ReadBits(MemoryAreaDMBit, 10, 2, 3)
+	assert.Nil(t, err)
+	assert.Equal(t, []bool{true, false, true}, bs)
 
-func (c *PLCMock) listenLoop() {
-	for {
-		buf := make([]byte, 2048)
-		n, addr, err := c.pc.ReadFrom(buf)
-		if err != nil {
-			log.Fatal(err)
-		}
+	bs, err = c.ReadBits(MemoryAreaDMBit, 10, 1, 5)
+	assert.Nil(t, err)
+	assert.Equal(t, []bool{false, true, false, true, false}, bs)
 
-		if n > 0 {
-			sid := buf[9]
-			ans, exist := c.answers[sid]
-			if exist {
-				if ans.needed {
-					c.pc.WriteTo(c.answers[sid].data, addr)
-				}
-			} else {
-				log.Fatal("There is no answer for sid =", sid)
-			}
-		} else {
-			log.Fatal("Cannot read request: ", buf)
-		}
-	}
 }
