@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -29,11 +30,7 @@ type Client struct {
 var ErrIncompatibleMemoryArea = errors.New("The memory area is incompatible with the data type to be read")
 
 // NewClient creates a new Omron FINS client
-<<<<<<< HEAD
-func NewClient(plcAddr, localAddr *net.UDPAddr, dst *Address, src *Address) (*Client, error) {
-=======
 func NewClient(localAddr, plcAddr Address) (*Client, error) {
->>>>>>> remotes/upstream/master
 	c := new(Client)
 	c.dst = plcAddr.finsAddress
 	c.src = localAddr.finsAddress
@@ -137,14 +134,8 @@ func (c *Client) ReadBits(memoryArea byte, address uint16, bitOffset byte, readC
 
 // ReadClock Reads the PLC clock
 func (c *Client) ReadClock() (*time.Time, error) {
-<<<<<<< HEAD
-	header := c.nextHeader()
-	command := NewCommand(CommandCodeClockRead, []byte{})
-	responseFrame, e := c.sendCommand(header, command, nil)
-=======
 	r, e := c.sendCommand(clockReadCommand())
 	e = checkResponse(r, e)
->>>>>>> remotes/upstream/master
 	if e != nil {
 		return nil, e
 	}
@@ -176,19 +167,7 @@ func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) erro
 	l := uint16(len(data))
 	bts := make([]byte, 2*l, 2*l)
 	for i := 0; i < int(l); i++ {
-<<<<<<< HEAD
-		binary.BigEndian.PutUint16(bytes[i*2:i*2+2], data[i])
-	}
-	command := writeCommand(NewIOAddress(memoryArea, address), l, bytes)
-	r, e := c.sendCommand(header, command, nil)
-	if e != nil {
-		return e
-	}
-	if r.EndCode() != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
-=======
 		binary.LittleEndian.PutUint16(bts[i*2:i*2+2], data[i])
->>>>>>> remotes/upstream/master
 	}
 	command := writeCommand(memAddr(memoryArea, address), l, bts)
 
@@ -198,22 +177,7 @@ func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) erro
 // WriteString Writes a string to the PLC data area
 func (c *Client) WriteString(memoryArea byte, address uint16, s string) error {
 	if checkIsWordMemoryArea(memoryArea) == false {
-<<<<<<< HEAD
-		return ErrIncompatibleMemoryArea
-	}
-	header := c.nextHeader()
-	bytes := make([]byte, 2*itemCount, 2*itemCount)
-	copy(bytes, s)
-	command := writeCommand(NewIOAddress(memoryArea, address), itemCount, bytes)
-	r, e := c.sendCommand(header, command, nil)
-	if e != nil {
-		return e
-	}
-	if r.EndCode() != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
-=======
 		return IncompatibleMemoryAreaError{memoryArea}
->>>>>>> remotes/upstream/master
 	}
 	bts := make([]byte, 2*len(s), 2*len(s))
 	copy(bts, s)
@@ -250,19 +214,7 @@ func (c *Client) WriteBits(memoryArea byte, address uint16, bitOffset byte, data
 	}
 	command := writeCommand(memAddrWithBitOffset(memoryArea, address, bitOffset), l, bts)
 
-<<<<<<< HEAD
-	r, e := c.sendCommand(header, command, nil)
-	if e != nil {
-		return e
-	}
-	if r.EndCode() != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
-	}
-
-	return nil
-=======
 	return checkResponse(c.sendCommand(command))
->>>>>>> remotes/upstream/master
 }
 
 // SetBit Sets a bit in the PLC data area
@@ -300,11 +252,7 @@ func (c *Client) bitTwiddle(memoryArea byte, address uint16, bitOffset byte, val
 	return checkResponse(c.sendCommand(command))
 }
 
-<<<<<<< HEAD
-	r, e := c.sendCommand(header, command, nil)
-=======
 func checkResponse(r *response, e error) error {
->>>>>>> remotes/upstream/master
 	if e != nil {
 		return e
 	}
