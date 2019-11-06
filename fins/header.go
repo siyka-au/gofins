@@ -1,40 +1,36 @@
 package fins
 
-// Header A FINS frame header
-type Header struct {
-	messageType      uint8
+type header struct {
+	messageType      byte
 	responseRequired bool
 	src              finsAddress
 	dst              finsAddress
 	serviceID        byte
-	gatewayCount     uint8
+	gatewayCount     byte
 }
 
 const (
-	// MessageTypeCommand Command message type
-	MessageTypeCommand uint8 = iota
-
-	// MessageTypeResponse Response message type
-	MessageTypeResponse uint8 = iota
+	messageTypeCommand  byte = iota
+	messageTypeResponse byte = iota
 )
 
-func defaultHeader(messageType uint8, responseRequired bool, src finsAddress, dst finsAddress, serviceID byte) Header {
-	h := Header{}
-	h.messageType = messageType
-	h.responseRequired = responseRequired
-	h.gatewayCount = 2
-	h.src = src
-	h.dst = dst
-	h.serviceID = serviceID
-	return h
+func defaultHeader(messageType byte, responseRequired bool, src finsAddress, dst finsAddress, serviceID byte) header {
+	hdr := header{}
+	hdr.messageType = messageType
+	hdr.responseRequired = responseRequired
+	hdr.gatewayCount = 2
+	hdr.src = src
+	hdr.dst = dst
+	hdr.serviceID = serviceID
+	return hdr
 }
 
-func defaultCommandHeader(src finsAddress, dst finsAddress, serviceID byte) Header {
-	h := defaultHeader(MessageTypeCommand, true, src, dst, serviceID)
-	return h
+func defaultCommandHeader(src finsAddress, dst finsAddress, serviceID byte) header {
+	hdr := defaultHeader(messageTypeCommand, true, src, dst, serviceID)
+	return hdr
 }
 
-func defaultResponseHeader(commandHeader Header) Header {
-	h := defaultHeader(MessageTypeResponse, false, commandHeader.dst, commandHeader.src, commandHeader.serviceID)
-	return h
+func defaultResponseHeader(commandHeader header) header {
+	hdr := defaultHeader(messageTypeResponse, false, commandHeader.dst, commandHeader.src, commandHeader.serviceID)
+	return hdr
 }

@@ -2,7 +2,7 @@ package fins
 
 import "net"
 
-// finsAddress A FINS device address
+// A FINS device address
 type finsAddress struct {
 	network byte
 	node    byte
@@ -11,14 +11,15 @@ type finsAddress struct {
 
 // Address A full device address
 type Address struct {
-	finsAddress finsAddress
 	udpAddress  *net.UDPAddr
+	finsAddress finsAddress
 }
 
-func NewAddress(ip string, port int, network, node, unit byte) Address {
+// NewAddress Generates a new FINS address
+func NewAddress(ip net.IP, port int, network, node, unit byte) Address {
 	return Address{
 		udpAddress: &net.UDPAddr{
-			IP:   net.ParseIP(ip),
+			IP:   ip,
 			Port: port,
 		},
 		finsAddress: finsAddress{

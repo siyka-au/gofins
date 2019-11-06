@@ -15,13 +15,13 @@ type Server struct {
 	closed    bool
 }
 
-const DM_AREA_SIZE = 32768
+const dmAreaSize = 32768
 
 func NewPLCSimulator(plcAddr Address) (*Server, error) {
 	s := new(Server)
 	s.addr = plcAddr
-	s.dmarea = make([]byte, DM_AREA_SIZE)
-	s.bitdmarea = make([]byte, DM_AREA_SIZE)
+	s.dmarea = make([]byte, dmAreaSize)
+	s.bitdmarea = make([]byte, dmAreaSize)
 
 	conn, err := net.ListenUDP("udp", plcAddr.udpAddress)
 	if err != nil {
@@ -64,7 +64,7 @@ func (s *Server) handler(r request) response {
 		switch memAddr.memoryArea {
 		case MemoryAreaDMWord:
 
-			if memAddr.address+ic*2 > DM_AREA_SIZE { // Check address boundary
+			if memAddr.address+ic*2 > dmAreaSize { // Check address boundary
 				endCode = EndCodeAddressRangeExceeded
 				break
 			}
@@ -77,7 +77,7 @@ func (s *Server) handler(r request) response {
 			endCode = EndCodeNormalCompletion
 
 		case MemoryAreaDMBit:
-			if memAddr.address+ic > DM_AREA_SIZE { // Check address boundary
+			if memAddr.address+ic > dmAreaSize { // Check address boundary
 				endCode = EndCodeAddressRangeExceeded
 				break
 			}
@@ -98,7 +98,7 @@ func (s *Server) handler(r request) response {
 		log.Printf("Command code is not supported: 0x%04x\n", r.commandCode)
 		endCode = EndCodeNotSupportedByModelVersion
 	}
-	return response{defaultResponseHeader(r.header), r.commandCode, endCode, data}
+	return response{defaultResponseHeader(r.hdr), r.commandCode, endCode, data}
 }
 
 // Close Closes the FINS server

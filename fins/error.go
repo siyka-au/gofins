@@ -7,35 +7,20 @@ import (
 
 // Client errors
 
+// ResponseTimeoutError An error when the other end of a command code hasn't responded within the set timeout period
 type ResponseTimeoutError struct {
 	duration time.Duration
 }
 
 func (e ResponseTimeoutError) Error() string {
-	return fmt.Sprintf("Response timeout of %d has been reached", e.duration)
+	return fmt.Sprintf("Response timeout of %s has been reached", e.duration)
 }
 
+// IncompatibleMemoryAreaError An error for when an imcompatible memory area for the given operation is given
 type IncompatibleMemoryAreaError struct {
-	area byte
+	memoryArea MemoryArea
 }
 
 func (e IncompatibleMemoryAreaError) Error() string {
-	return fmt.Sprintf("The memory area is incompatible with the data type to be read: 0x%X", e.area)
-}
-
-// Driver errors
-
-type BCDBadDigitError struct {
-	v string
-	val uint64
-}
-
-func (e BCDBadDigitError) Error() string {
-	return fmt.Sprintf("Bad digit in BCD decoding: %s = %d", e.v, e.val)
-}
-
-type BCDOverflowError struct {}
-
-func (e BCDOverflowError) Error() string {
-	return "Overflow occurred in BCD decoding"
+	return fmt.Sprintf("The memory area is incompatible with the data type to be read: 0x%X", e.memoryArea)
 }
