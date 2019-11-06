@@ -26,6 +26,21 @@ type memoryAddress struct {
 	bitOffset  byte
 }
 
+func runCommand(opMode CPUOperatingMode) []byte {
+	commandData := make([]byte, 2, 8)
+	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeRun)
+	commandData = append(commandData, []byte{0xff, 0xff}...)
+	commandData = append(commandData, byte(opMode))
+	return commandData
+}
+
+func stopCommand() []byte {
+	commandData := make([]byte, 2, 4)
+	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeStop)
+	commandData = append(commandData, []byte{0xff, 0xff}...)
+	return commandData
+}
+
 func memoryAreaReadCommand(memoryAddr memoryAddress, itemCount uint16) []byte {
 	commandData := make([]byte, 2, 8)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeMemoryAreaRead)

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/siyka-au/bcd"
+	bcd "github.com/siyka-au/gobcd"
 )
 
 const defaultResponseTimeout = time.Duration(20 * time.Millisecond)
@@ -68,6 +68,28 @@ func (c *Client) SetByteOrder(byteOrder binary.ByteOrder) {
 func (c *Client) Close() {
 	c.closed = true
 	c.conn.Close()
+}
+
+// Run Runs program
+func (c *Client) Run(opMode CPUOperatingMode) error {
+	r, e := c.sendCommand(runCommand(opMode))
+	e = checkResponse(r, e)
+	if e != nil {
+		return e
+	}
+
+	return nil
+}
+
+// Stop Stops program
+func (c *Client) Stop() error {
+	r, e := c.sendCommand(stopCommand())
+	e = checkResponse(r, e)
+	if e != nil {
+		return e
+	}
+
+	return nil
 }
 
 // MemoryAreaReadBytes Reads a string from the PLC memory area
@@ -262,16 +284,6 @@ func (c *Client) bitTwiddle(memoryArea MemoryArea, address uint16, bitOffset byt
 	return checkResponse(c.sendCommand(command))
 }
 
-func checkResponse(r *response, e error) error {
-	if e != nil {
-		return e
-	}
-	if r.endCode != EndCodeNormalCompletion {
-		return fmt.Errorf("error reported by destination, end code 0x%x", r.endCode)
-	}
-	return nil
-}
-
 func (c *Client) nextHeader() *header {
 	sid := c.incrementSid()
 	header := defaultCommandHeader(c.src, c.dst, sid)
@@ -310,6 +322,16 @@ func (c *Client) sendCommand(command []byte) (*response, error) {
 	}
 }
 
+func checkResponse(r *response, e error) error {
+	if e != nil {
+		return e
+	}
+	if r.endCode != EndCodeNormalCompletion {
+		return fmt.Errorf("error reported by destination, end code 0x%x", r.endCode)
+	}
+	return nil
+}
+
 func (c *Client) listenLoop() {
 	for {
 		buf := make([]byte, 2048)
@@ -330,69 +352,3 @@ func (c *Client) listenLoop() {
 		}
 	}
 }
-
-func checkIsWordMemoryArea(memoryArea MemoryArea) bool {
-	if memoryArea == MemoryAreaDMWord ||
-		memoryArea == MemoryAreaARWord ||
-		memoryArea == MemoryAreaHRWord ||
-		memoryArea == MemoryAreaWRWord {
-		return true
-	}
-	return false
-}
-
-func checkIsBitMemoryArea(memoryArea MemoryArea) bool {
-	if memoryArea == MemoryAreaDMBit ||
-		memoryArea == MemoryAreaARBit ||
-		memoryArea == MemoryAreaHRBit ||
-		memoryArea == MemoryAreaWRBit {
-		return true
-	}
-	return false
-}
-
-// @ToDo Asynchronous functions
-
-// WriteDataAsync writes to the PLC data area asynchronously
-// func (c *Client) WriteDataAsync(startAddr uint16, data []uint16, callback func(resp response)) error {
-// 	sid := c.incrementSid()
-// 	cmd := writeDCommand(defaultHeader(c.dst, c.src, sid), startAddr, data)
-// 	return c.asyncCommand(sid, cmd, callback)
-// }
-// func (c *Client) asyncCommand(sid byte, cmd []byte, callback func(resp response)) error {
-// 	_, err := c.conn.Write(cmd)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	asyncResponse(c.resp[sid], callback)
-// 	return nil
-// }
-//
-//if callback == nil {
-//	p := responseFrame.Payload()			responseFrame := <-c.resp[header.ServiceID()]
-//	response := NewResponse(			p := responseFrame.Payload()
-//		p.CommandCode(),			response := NewResponse(
-//		binary.BigEndian.Uint16(p.Data()[0:2]),				p.CommandCode(),
-//		p.Data()[2:])				binary.BigEndian.Uint16(p.Data()[0:2]),
-//	return response, nil				p.Data()[2:])
-//		return response, nil
-//	}
-//
-// 	go func(frameChannel chan Frame, callback func(*Response)) {
-//		responseFrame := <-frameChannel
-//		p := responseFrame.Payload()
-//		response := NewResponse(
-//			p.CommandCode(),
-//			binary.BigEndian.Uint16(p.Data()[0:2]),
-//			p.Data()[2:])
-//		callback(response)
-//	}(c.resp[header.ServiceID()], callback)
-
-// func asyncResponse(ch chan response, callback func(r response)) {
-// 	if callback != nil {
-// 		go func(ch chan response, callback func(r response)) {
-// 			ans := <-ch
-// 			callback(ans)
-// 		}(ch, callback)
-// 	}
-// }

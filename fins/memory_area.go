@@ -55,3 +55,23 @@ const (
 	// MemoryAreaClockPulsesConditionFlagsBit Memory area: CIO bit
 	MemoryAreaClockPulsesConditionFlagsBit MemoryArea = 0x07
 )
+
+func checkIsWordMemoryArea(memoryArea MemoryArea) bool {
+	if memoryArea == MemoryAreaDMWord ||
+		memoryArea == MemoryAreaARWord ||
+		memoryArea == MemoryAreaHRWord ||
+		memoryArea == MemoryAreaWRWord {
+		return true
+	}
+	return false
+}
+
+func checkIsBitMemoryArea(memoryArea MemoryArea) bool {
+	if memoryArea == MemoryAreaDMBit ||
+		memoryArea == MemoryAreaARBit ||
+		memoryArea == MemoryAreaHRBit ||
+		memoryArea == MemoryAreaWRBit {
+		return true
+	}
+	return false
+}
