@@ -40,7 +40,7 @@ func (finsc *finscContext) makeFinsConnection(c *kingpin.ParseContext) error {
 }
 
 func main() {
-	finsc := finscContext{}
+	finsc := &finscContext{}
 	app := kingpin.New("finsc", "help").DefaultEnvars().PreAction(finsc.makeFinsConnection)
 
 	app.Flag("local-ip", "local IP address").Default("0.0.0.0").IPVar(&finsc.localIP)
@@ -57,8 +57,8 @@ func main() {
 
 	app.Flag("timeout", "timeout for commands").Default("20ms").DurationVar(&finsc.timeout)
 
-	configureClock(app, &finsc)
-	configureCpuOperatingMode(app, &finsc)
+	configureClock(app, finsc)
+	configureCpuOperatingMode(app, finsc)
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }

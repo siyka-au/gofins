@@ -181,9 +181,21 @@ func (c *Client) ReadClock() (*time.Time, error) {
 	return &t, nil
 }
 
-// WriteClock Reads the PLC clock
+// WriteClock Sets the PLC clock
 func (c *Client) WriteClock(time time.Time) error {
-	command := clockWriteCommand(0x19, 0x09, 0x18, 0x01, 0x02, 0x03, 0x02)
+
+	if time.Year() > 2097 || time.Year() < 1998 {
+		return errors.New("Year outside of allowable range of 1998 to 2097 inclusive")
+	}
+
+	year := bcd.Encode(uint64(time.Year()))
+	month := bcd.Encode(uint64(time.Month()))
+	day := bcd.Encode(uint64(time.Day()))
+	hour := bcd.Encode(uint64(time.Hour()))
+	minute := bcd.Encode(uint64(time.Minute()))
+	second := bcd.Encode(uint64(time.Second()))
+
+	command := clockWriteCommand(year[0], month[0], day[0], hour[0], minute[0], second[0], byte(time.Weekday()))
 	r, e := c.sendCommand(command)
 	e = checkResponse(r, e)
 	if e != nil {
