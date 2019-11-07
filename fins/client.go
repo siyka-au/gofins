@@ -92,6 +92,102 @@ func (c *Client) Stop() error {
 	return nil
 }
 
+// CPUUnitRead Reads CPU unit information
+func (c *Client) CPUUnitRead() error {
+	return nil
+}
+
+type CPUUnitStatus struct {
+	Running                   bool
+	FlashMemoryWriting        bool
+	BatteryPresent            bool
+	Standby                   bool
+	Mode                      CPUOperatingMode
+	FALSError                 bool
+	CycleTimeOver             bool
+	ProgramError              bool
+	IOSettingError            bool
+	IOPointOverflow           bool
+	FatalInnerBoardError      bool
+	DuplicationError          bool
+	IOBusError                bool
+	MemoryError               bool
+	OtherNonFatalError        bool
+	SpecialIOUnitSettingError bool
+	CS1CPUBusUnitSettingError bool
+	BatteryError              bool
+	SYSMACBusError            bool
+	SpecialIOUnitError        bool
+	CPUBusUnitError           bool
+	InnerBoardError           bool
+	IOVerificationError       bool
+	PLCSetupError             bool
+	BasicIOUnitError          bool
+	InterruptTaskError        bool
+	DuplexError               bool
+	FALError                  bool
+	MessagePresent            [8]bool
+	ErrorCode                 uint16
+	ErrorMessage              string
+}
+
+// CPUUnitStatus CPU unit status
+func (c *Client) CPUUnitStatus() (*CPUUnitStatus, error) {
+	r, e := c.sendCommand(cpuUnitStatusCommand())
+	e = checkResponse(r, e)
+	if e != nil {
+		return nil, e
+	}
+
+	cpuUnitStatus := new(CPUUnitStatus)
+
+	status := r.data[0]
+	cpuUnitStatus.Running = status&1 > 0
+	cpuUnitStatus.FlashMemoryWriting = status&1<<1 > 0
+	cpuUnitStatus.BatteryPresent = status&1<<2 > 0
+	cpuUnitStatus.Standby = status&1<<7 > 0
+
+	cpuUnitStatus.Mode = CPUOperatingMode(r.data[1])
+
+	fatalErrorData := binary.BigEndian.Uint16(r.data[2:4])
+	cpuUnitStatus.FALSError = fatalErrorData&1<<6 > 0
+	cpuUnitStatus.CycleTimeOver = fatalErrorData&1<<8 > 0
+	cpuUnitStatus.ProgramError = fatalErrorData&1<<9 > 0
+	cpuUnitStatus.IOSettingError = fatalErrorData&1<<10 > 0
+	cpuUnitStatus.IOPointOverflow = fatalErrorData&1<<11 > 0
+	cpuUnitStatus.FatalInnerBoardError = fatalErrorData&1<<12 > 0
+	cpuUnitStatus.DuplicationError = fatalErrorData&1<<13 > 0
+	cpuUnitStatus.IOBusError = fatalErrorData&1<<14 > 0
+	cpuUnitStatus.MemoryError = fatalErrorData&1<<15 > 0
+
+	nonFatalErrorData := binary.BigEndian.Uint16(r.data[4:6])
+	cpuUnitStatus.OtherNonFatalError = nonFatalErrorData&1<<0 > 0
+	cpuUnitStatus.SpecialIOUnitSettingError = nonFatalErrorData&1<<2 > 0
+	cpuUnitStatus.CS1CPUBusUnitSettingError = nonFatalErrorData&1<<3 > 0
+	cpuUnitStatus.BatteryError = nonFatalErrorData&1<<4 > 0
+	cpuUnitStatus.SYSMACBusError = nonFatalErrorData&1<<5 > 0
+	cpuUnitStatus.SpecialIOUnitError = nonFatalErrorData&1<<6 > 0
+	cpuUnitStatus.CPUBusUnitError = nonFatalErrorData&1<<7 > 0
+	cpuUnitStatus.InnerBoardError = nonFatalErrorData&1<<8 > 0
+	cpuUnitStatus.IOVerificationError = nonFatalErrorData&1<<9 > 0
+	cpuUnitStatus.PLCSetupError = nonFatalErrorData&1<<10 > 0
+	cpuUnitStatus.BasicIOUnitError = nonFatalErrorData&1<<12 > 0
+	cpuUnitStatus.InterruptTaskError = nonFatalErrorData&1<<13 > 0
+	cpuUnitStatus.DuplexError = nonFatalErrorData&1<<14 > 0
+	cpuUnitStatus.FALError = nonFatalErrorData&1<<15 > 0
+
+	messagePresent := binary.BigEndian.Uint16(r.data[6:8])
+	for i := 0; i < len(cpuUnitStatus.MessagePresent); i++ {
+		cpuUnitStatus.MessagePresent[i] = messagePresent&1<<i > 0
+	}
+
+	cpuUnitStatus.ErrorCode = binary.BigEndian.Uint16(r.data[8:10])
+
+	cpuUnitStatus.ErrorMessage = string(r.data[10:26])
+
+	return cpuUnitStatus, nil
+}
+
 // MemoryAreaReadBytes Reads a string from the PLC memory area
 func (c *Client) MemoryAreaReadBytes(memoryArea MemoryArea, address uint16, readCount uint16) ([]byte, error) {
 	if checkIsWordMemoryArea(memoryArea) == false {

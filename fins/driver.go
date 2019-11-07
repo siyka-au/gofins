@@ -41,6 +41,12 @@ func stopCommand() []byte {
 	return commandData
 }
 
+func cpuUnitStatusCommand() []byte {
+	commandData := make([]byte, 2, 2)
+	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeCPUUnitStatusRead)
+	return commandData
+}
+
 func memoryAreaReadCommand(memoryAddr memoryAddress, itemCount uint16) []byte {
 	commandData := make([]byte, 2, 8)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeMemoryAreaRead)
