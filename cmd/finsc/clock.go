@@ -14,21 +14,21 @@ import (
 var iso8601DateRegex = regexp.MustCompile(`^(-?(?:[1-9][0-9]*)?[0-9]{4})-(1[0-2]|0[1-9])-(3[01]|0[1-9]|[12][0-9])[Tt](2[0-3]|[01][0-9]):([0-5][0-9]):([0-5][0-9])(.([0-9]+))?([Zz])?$`)
 
 type clockCommand struct {
-	fins   *fins.Client
+	finsc *finsContext
 	setArg string
 }
 
 func configureClock(app *kingpin.Application, finsc *finscContext) {
 	clock := app.Command("clock", "Remote clock")
 	cc := &clockCommand{}
-	cc.fins = finsc.client
+	cc.finsc = finscContext
 	clock.Command("read", "Read remote clock").Action(cc.readClock)
 	clockSet := clock.Command("set", "Set remote clock").Action(cc.setClock)
 	clockSet.Arg("date-time", "Date and time to set").Required().StringVar(&cc.setArg)
 }
 
 func (cc *clockCommand) readClock(c *kingpin.ParseContext) error {
-	t, e := cc.fins.ReadClock()
+	t, e := cc.finsc.client.ReadClock()
 	if e != nil {
 		return e
 	}
@@ -60,7 +60,7 @@ func (cc *clockCommand) setClock(c *kingpin.ParseContext) error {
 	}
 
 	fmt.Printf("Setting remote clock to %s", t)
-	e := cc.fins.WriteClock(t)
+	e := cc.finsc.client.WriteClock(t)
 	if e != nil {
 		panic(e)
 	}

@@ -57,8 +57,8 @@ func main() {
 
 	app.Flag("timeout", "timeout for commands").Default("20ms").DurationVar(&finsc.timeout)
 
-	configureClock(app, &finsc)
-	configureCpu(app, &finsc)
+	configureClock(app, finsc)
+	configureCPU(app, finsc)
 
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }
