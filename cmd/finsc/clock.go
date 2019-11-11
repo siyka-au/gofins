@@ -7,21 +7,20 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/siyka-au/gofins/fins"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var iso8601DateRegex = regexp.MustCompile(`^(-?(?:[1-9][0-9]*)?[0-9]{4})-(1[0-2]|0[1-9])-(3[01]|0[1-9]|[12][0-9])[Tt](2[0-3]|[01][0-9]):([0-5][0-9]):([0-5][0-9])(.([0-9]+))?([Zz])?$`)
 
 type clockCommand struct {
-	finsc *finsContext
+	finsc  *finscContext
 	setArg string
 }
 
 func configureClock(app *kingpin.Application, finsc *finscContext) {
 	clock := app.Command("clock", "Remote clock")
 	cc := &clockCommand{}
-	cc.finsc = finscContext
+	cc.finsc = finsc
 	clock.Command("read", "Read remote clock").Action(cc.readClock)
 	clockSet := clock.Command("set", "Set remote clock").Action(cc.setClock)
 	clockSet.Arg("date-time", "Date and time to set").Required().StringVar(&cc.setArg)

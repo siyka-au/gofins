@@ -7,7 +7,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-func configureCpu(app *kingpin.Application, finsc *finscContext) {
+func configureCPU(app *kingpin.Application, finsc *finscContext) {
 	cpu := app.Command("cpu", "Remote CPU")
 	cpu.Command("run", "Set the CPU operating mode to 'run'").Action(finsc.cpuOperatingModeRun)
 	cpu.Command("monitor", "Set the CPU operating mode to 'monitor'").Action(finsc.cpuOperatingModeMonitor)
