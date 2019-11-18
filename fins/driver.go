@@ -105,12 +105,23 @@ func clockWriteCommand(year, month, day, hour, minute, second, dayOfWeek byte) [
 	return commandData
 }
 
+func cycleTimeCommand(subCommand byte) []byte {
+	commandData := make([]byte, 2, 3)
+	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeCycleTimeRead)
+	commandData = append(commandData, subCommand)
+	return commandData
+}
+
+func cycleTimeInitialiseCommand() []byte {
+	return cycleTimeCommand(0x00)
+}
+
+func cycleTimeReadCommand() []byte {
+	return cycleTimeCommand(0x01)
+}
+
 func encodeMemoryAddress(memoryAddr memoryAddress) []byte {
-	bytes := make([]byte, 4, 4)
-	bytes[0] = byte(memoryAddr.memoryArea)
-	binary.BigEndian.PutUint16(bytes[1:3], memoryAddr.address)
-	bytes[3] = memoryAddr.bitOffset
-	return bytes
+	return cycleTime(0x01)
 }
 
 func decodeMemoryAddress(data []byte) memoryAddress {

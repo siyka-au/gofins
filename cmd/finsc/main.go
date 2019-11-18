@@ -60,5 +60,9 @@ func main() {
 	configureClock(app, finsc)
 	configureCPU(app, finsc)
 
+	configureCycleTime(app, finsc)
+	
+	configureParameterArea(app, finsc)
+
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 }

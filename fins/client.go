@@ -188,6 +188,40 @@ func (c *Client) CPUUnitStatus() (*CPUUnitStatus, error) {
 	return cpuUnitStatus, nil
 }
 
+// CycleTimeInitialise Initialise cycle time statistics
+func (c *Client) CycleTimeInitialise() error {
+	r, e := c.sendCommand(cycleTimeInitialiseCommand())
+	e = checkResponse(r, e)
+	return e
+}
+
+// CycleTimeRead Read cycle time statistics
+func (c *Client) CycleTimeRead() (*time.Duration, *time.Duration, *time.Duration, error) {
+	r, e := c.sendCommand(cycleTimeReadCommand())
+	e = checkResponse(r, e)
+	if e != nil {
+		return nil, nil, nil, e
+	}
+
+	avg := time.Duration(binary.BigEndian.Uint32(r.data[0:4]) * 100) * time.Microsecond
+	max := time.Duration(binary.BigEndian.Uint32(r.data[4:8]) * 100) * time.Microsecond
+	min := time.Duration(binary.BigEndian.Uint32(r.data[8:12]) * 100) * time.Microsecond
+
+	return &avg, &max, &min, nil
+}
+
+// ParameterAreaRead Reads data from the PLC parameter area
+func (c *Client) ParameterAreaRead(parameterArea ParameterArea, address uint32, readCount uint16) ([]byte, error) {
+	command := parameterAreaReadCommand(memoryAddress{memoryArea, address, 0}, readCount)
+	r, e := c.sendCommand(command)
+	e = checkResponse(r, e)
+	if e != nil {
+		return nil, e
+	}
+
+	return r.data, nil
+}
+
 // MemoryAreaReadBytes Reads a string from the PLC memory area
 func (c *Client) MemoryAreaReadBytes(memoryArea MemoryArea, address uint16, readCount uint16) ([]byte, error) {
 	if checkIsWordMemoryArea(memoryArea) == false {
