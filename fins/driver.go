@@ -86,6 +86,16 @@ const (
 	dayOfWeekSaturday  byte = 0x06
 )
 
+func parameterAreaReadCommand(parameterArea ParameterArea, beginningWord uint16, numberOfWords uint16) []byte {
+	commandData := make([]byte, 8, 8)
+	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeParameterAreaRead)
+	binary.BigEndian.PutUint16(commandData[2:4], parameterArea)
+	binary.BigEndian.PutUint16(commandData[4:6], beginningWord)
+	binary.BigEndian.PutUint16(commandData[6:8], numberOfWords & 0x3fff)
+
+	return commandData
+}
+
 func clockReadCommand() []byte {
 	commandData := make([]byte, 2, 2)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeClockRead)
@@ -106,9 +116,9 @@ func clockWriteCommand(year, month, day, hour, minute, second, dayOfWeek byte) [
 }
 
 func cycleTimeCommand(subCommand byte) []byte {
-	commandData := make([]byte, 2, 3)
+	commandData := make([]byte, 3, 3)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeCycleTimeRead)
-	commandData = append(commandData, subCommand)
+	commandData[2] = subCommand
 	return commandData
 }
 
@@ -121,7 +131,11 @@ func cycleTimeReadCommand() []byte {
 }
 
 func encodeMemoryAddress(memoryAddr memoryAddress) []byte {
-	return cycleTime(0x01)
+	bytes := make([]byte, 4, 4)
+	bytes[0] = byte(memoryAddr.memoryArea)
+	binary.BigEndian.PutUint16(bytes[1:3], memoryAddr.address)
+	bytes[3] = memoryAddr.bitOffset
+	return bytes
 }
 
 func decodeMemoryAddress(data []byte) memoryAddress {
