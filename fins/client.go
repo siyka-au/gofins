@@ -211,15 +211,19 @@ func (c *Client) CycleTimeRead() (*time.Duration, *time.Duration, *time.Duration
 }
 
 // ParameterAreaRead Reads data from the PLC parameter area
-func (c *Client) ParameterAreaRead(parameterArea ParameterArea, address uint32, readCount uint16) ([]byte, error) {
-	command := parameterAreaReadCommand(memoryAddress{memoryArea, address, 0}, readCount)
+func (c *Client) ParameterAreaRead(area ParameterArea, address, readCount uint16) (ParameterArea, uint16, uint16, []byte, error) {
+	command := parameterAreaReadCommand(area, address, readCount)
 	r, e := c.sendCommand(command)
 	e = checkResponse(r, e)
 	if e != nil {
-		return nil, e
+		return ParameterArea(0), 0, 0, nil, e
 	}
 
-	return r.data, nil
+	returnedArea := ParameterArea(binary.BigEndian.Uint16(r.data[0:2]))
+	returnedBeginningAddress := binary.BigEndian.Uint16(r.data[2:4])
+	returnedReadCount := binary.BigEndian.Uint16(r.data[4:6])
+
+	return returnedArea, returnedBeginningAddress, returnedReadCount, r.data[6:], nil
 }
 
 // MemoryAreaReadBytes Reads a string from the PLC memory area
@@ -233,7 +237,7 @@ func (c *Client) MemoryAreaReadBytes(memoryArea MemoryArea, address uint16, read
 	if e != nil {
 		return nil, e
 	}
-
+	
 	return r.data, nil
 }
 

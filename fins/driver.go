@@ -89,7 +89,7 @@ const (
 func parameterAreaReadCommand(parameterArea ParameterArea, beginningWord uint16, numberOfWords uint16) []byte {
 	commandData := make([]byte, 8, 8)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeParameterAreaRead)
-	binary.BigEndian.PutUint16(commandData[2:4], parameterArea)
+	binary.BigEndian.PutUint16(commandData[2:4], uint16(parameterArea))
 	binary.BigEndian.PutUint16(commandData[4:6], beginningWord)
 	binary.BigEndian.PutUint16(commandData[6:8], numberOfWords & 0x3fff)
 

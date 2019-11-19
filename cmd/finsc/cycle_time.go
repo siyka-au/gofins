@@ -8,14 +8,14 @@ import (
 )
 
 type cycleTimeCommand struct {
-	fins   **fins.Client
+	fins **fins.Client
 }
 
 func configureCycleTime(app *kingpin.Application, finsc *finscContext) {
 	cycleTime := app.Command("cycle-time", "Cycle time statistics")
 	ctc := &cycleTimeCommand{}
 	ctc.fins = &finsc.client
-	
+
 	cycleTime.Command("initialise", "Initialise cycle time statistics").Action(ctc.cycleTimeInitialise)
 	cycleTime.Command("read", "Read cycle time statistics").Action(ctc.cycleTimeRead)
 }
@@ -28,7 +28,7 @@ func (ctc *cycleTimeCommand) cycleTimeInitialise(c *kingpin.ParseContext) error 
 
 func (ctc *cycleTimeCommand) cycleTimeRead(c *kingpin.ParseContext) error {
 	fmt.Println("Read cycle time statistics")
-	avg, max, min, e :=(**ctc.fins).CycleTimeRead()
+	avg, max, min, e := (**ctc.fins).CycleTimeRead()
 	if e != nil {
 		return e
 	}
