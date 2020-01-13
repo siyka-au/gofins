@@ -58,8 +58,7 @@ func main() {
 	// s, _ := c.ReadString(fins.MemoryAreaDMWord, 10000, 10)
 	// fmt.Println("D10000: " + *s)
 
-	b, _ := c.ReadBytes(fins.MemoryAreaDMWord, 10000, 146)
-	b = b
+	zee, ee := c.ReadBytes(fins.MemoryAreaDMWord, 10000, 146)
 
 	// b, _ := c.ReadBits(fins.MemoryAreaDMWord, 10473, 2, 1)
 	// fmt.Println(b)

@@ -17,6 +17,7 @@ type Server struct {
 
 const dmAreaSize = 32768
 
+// NewPLCSimulator Creates a new, simulated PLC
 func NewPLCSimulator(plcAddr Address) (*Server, error) {
 	s := new(Server)
 	s.addr = plcAddr

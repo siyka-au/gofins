@@ -10,6 +10,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"math"
 
 	bcd "github.com/siyka-au/gobcd"
 )
@@ -97,6 +98,7 @@ func (c *Client) CPUUnitRead() error {
 	return nil
 }
 
+// CPUUnitStatus The status of the CPU unit
 type CPUUnitStatus struct {
 	Running                   bool
 	FlashMemoryWriting        bool
@@ -226,8 +228,8 @@ func (c *Client) ParameterAreaRead(area ParameterArea, address, readCount uint16
 	return returnedArea, returnedBeginningAddress, returnedReadCount, r.data[6:], nil
 }
 
-// MemoryAreaReadBytes Reads a string from the PLC memory area
-func (c *Client) MemoryAreaReadBytes(memoryArea MemoryArea, address uint16, readCount uint16) ([]byte, error) {
+// ReadBytes Reads a string from the PLC memory area
+func (c *Client) ReadBytes(memoryArea MemoryArea, address uint16, readCount uint16) ([]byte, error) {
 	if checkIsWordMemoryArea(memoryArea) == false {
 		return nil, IncompatibleMemoryAreaError{memoryArea}
 	}
@@ -241,9 +243,9 @@ func (c *Client) MemoryAreaReadBytes(memoryArea MemoryArea, address uint16, read
 	return r.data, nil
 }
 
-// MemoryAreaReadWords Reads words from the PLC memory area
-func (c *Client) MemoryAreaReadWords(memoryArea MemoryArea, address uint16, readCount uint16) ([]uint16, error) {
-	data, e := c.MemoryAreaReadBytes(memoryArea, address, readCount)
+// ReadWords Reads words from the PLC memory area
+func (c *Client) ReadWords(memoryArea MemoryArea, address uint16, readCount uint16) ([]uint16, error) {
+	data, e := c.ReadBytes(memoryArea, address, readCount)
 	if e != nil {
 		return nil, e
 	}
@@ -255,9 +257,9 @@ func (c *Client) MemoryAreaReadWords(memoryArea MemoryArea, address uint16, read
 	return wordData, nil
 }
 
-// MemoryAreaReadString Reads a string from the PLC memory area
-func (c *Client) MemoryAreaReadString(memoryArea MemoryArea, address uint16, readCount uint16) (string, error) {
-	data, e := c.MemoryAreaReadBytes(memoryArea, address, readCount)
+// ReadString Reads a string from the PLC memory area
+func (c *Client) ReadString(memoryArea MemoryArea, address uint16, readCount uint16) (string, error) {
+	data, e := c.ReadBytes(memoryArea, address, readCount)
 	if e != nil {
 		return "", e
 	}
@@ -268,8 +270,8 @@ func (c *Client) MemoryAreaReadString(memoryArea MemoryArea, address uint16, rea
 	return string(data[:n]), nil
 }
 
-// MemoryAreaReadBits Reads bits from the PLC memory area
-func (c *Client) MemoryAreaReadBits(memoryArea MemoryArea, address uint16, bitOffset byte, readCount uint16) ([]bool, error) {
+// ReadBits Reads bits from the PLC memory area
+func (c *Client) ReadBits(memoryArea MemoryArea, address uint16, bitOffset byte, readCount uint16) ([]bool, error) {
 	if checkIsBitMemoryArea(memoryArea) == false {
 		return nil, IncompatibleMemoryAreaError{memoryArea}
 	}
@@ -347,7 +349,7 @@ func (c *Client) WriteWords(memoryArea MemoryArea, address uint16, data []uint16
 	l := uint16(len(data))
 	bts := make([]byte, 2*l, 2*l)
 	for i := 0; i < int(l); i++ {
-		binary.LittleEndian.PutUint16(bts[i*2:i*2+2], data[i])
+		c.byteOrder.PutUint16(bts[i*2:i*2+2], data[i])
 	}
 	command := memoryAreaWriteCommand(memoryAddress{memoryArea, address, 0}, l, bts)
 
@@ -365,6 +367,22 @@ func (c *Client) WriteString(memoryArea MemoryArea, address uint16, data string)
 	command := memoryAreaWriteCommand(memoryAddress{memoryArea, address, 0}, uint16((len(data)+1)/2), stringBytes) //TODO: test on real PLC
 
 	return checkResponse(c.sendCommand(command))
+}
+
+// WriteFloat32 Writes a float32 as 2 words (4 bytes) to the PLC data area
+func (c *Client) WriteFloat32(memoryArea MemoryArea, address uint16, data float32) error {
+	buf := make([]byte, 4, 4)
+	c.byteOrder.PutUint32(buf[:], math.Float32bits(data))
+
+	return c.WriteBytes(MemoryAreaDMWord, address, buf)
+}
+
+// WriteFloat64 Writes a float64 as 4 words (8 bytes) to the PLC data area
+func (c *Client) WriteFloat64(memoryArea MemoryArea, address uint16, data float64) error {
+	buf := make([]byte, 8, 8)
+	c.byteOrder.PutUint64(buf[:], math.Float64bits(data))
+
+	return c.WriteBytes(MemoryAreaDMWord, address, buf)
 }
 
 // WriteBytes Writes bytes array to the PLC data area
@@ -409,7 +427,7 @@ func (c *Client) ResetBit(memoryArea MemoryArea, address uint16, bitOffset byte)
 
 // ToggleBit Toggles a bit in the PLC data area
 func (c *Client) ToggleBit(memoryArea MemoryArea, address uint16, bitOffset byte) error {
-	data, e := c.MemoryAreaReadBits(memoryArea, address, bitOffset, 1)
+	data, e := c.ReadBits(memoryArea, address, bitOffset, 1)
 	if e != nil {
 		return e
 	}
