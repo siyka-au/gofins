@@ -55,7 +55,7 @@ func NewPLCSimulator(plcAddr Address) (*Server, error) {
 
 // Works with only DM area, 2 byte integers
 func (s *Server) handler(r request) response {
-	var endCode uint16
+	var endCode EndCode
 	data := []byte{}
 	switch r.commandCode {
 	case CommandCodeMemoryAreaRead, CommandCodeMemoryAreaWrite:
@@ -99,7 +99,7 @@ func (s *Server) handler(r request) response {
 		log.Printf("Command code is not supported: 0x%04x\n", r.commandCode)
 		endCode = EndCodeNotSupportedByModelVersion
 	}
-	return response{defaultResponseHeader(r.hdr), r.commandCode, endCode, data}
+	return response{defaultResponseHeader(r.hdr), r.commandCode, endCode, data, false, false, false}
 }
 
 // Close Closes the FINS server

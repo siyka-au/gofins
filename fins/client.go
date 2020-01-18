@@ -230,7 +230,7 @@ func (c *Client) ParameterAreaRead(area ParameterArea, address, readCount uint16
 
 // ReadBytes Reads a string from the PLC memory area
 func (c *Client) ReadBytes(memoryArea MemoryArea, address uint16, readCount uint16) ([]byte, error) {
-	if checkIsWordMemoryArea(memoryArea) == false {
+	if !checkIsWordMemoryArea(memoryArea) {
 		return nil, IncompatibleMemoryAreaError{memoryArea}
 	}
 	command := memoryAreaReadCommand(memoryAddress{memoryArea, address, 0}, readCount)
@@ -249,7 +249,7 @@ func (c *Client) ReadWords(memoryArea MemoryArea, address uint16, readCount uint
 	if e != nil {
 		return nil, e
 	}
-	wordData := make([]uint16, readCount, readCount)
+	wordData := make([]uint16, readCount)
 	for i := 0; i < int(readCount); i++ {
 		wordData[i] = c.byteOrder.Uint16(data[i*2 : i*2+2])
 	}
@@ -272,7 +272,7 @@ func (c *Client) ReadString(memoryArea MemoryArea, address uint16, readCount uin
 
 // ReadBits Reads bits from the PLC memory area
 func (c *Client) ReadBits(memoryArea MemoryArea, address uint16, bitOffset byte, readCount uint16) ([]bool, error) {
-	if checkIsBitMemoryArea(memoryArea) == false {
+	if !checkIsBitMemoryArea(memoryArea) {
 		return nil, IncompatibleMemoryAreaError{memoryArea}
 	}
 	command := memoryAreaReadCommand(memoryAddress{memoryArea, address, bitOffset}, readCount)
@@ -282,7 +282,7 @@ func (c *Client) ReadBits(memoryArea MemoryArea, address uint16, bitOffset byte,
 		return nil, e
 	}
 
-	data := make([]bool, readCount, readCount)
+	data := make([]bool, readCount)
 	for i := 0; i < int(readCount); i++ {
 		data[i] = r.data[i]&0x01 > 0
 	}
@@ -491,7 +491,7 @@ func checkResponse(r *response, e error) error {
 		return e
 	}
 	if r.endCode != EndCodeNormalCompletion {
-		return fmt.Errorf("error reported by destination, end code 0x%x", r.endCode)
+		return fmt.Errorf("error reported by destination, end code 0x%x: %s", uint16(r.endCode), r.endCode.String())
 	}
 	return nil
 }

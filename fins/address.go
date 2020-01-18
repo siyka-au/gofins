@@ -16,10 +16,10 @@ type Address struct {
 }
 
 // NewAddress Generates a new FINS address
-func NewAddress(ip string, port int, network, node, unit byte) Address {
+func NewAddress(ip net.IP, port int, network, node, unit byte) Address {
 	return Address{
 		udpAddress: &net.UDPAddr{
-			IP:   net.ParseIP(ip),
+			IP:   ip,
 			Port: port,
 		},
 		finsAddress: finsAddress{

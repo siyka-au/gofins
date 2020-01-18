@@ -15,8 +15,11 @@ type request struct {
 type response struct {
 	hdr         header
 	commandCode uint16
-	endCode     uint16
+	endCode     EndCode
 	data        []byte
+	networkRelayError bool
+	fatalCPUError bool
+	nonFataCPUError bool
 }
 
 // A plc memory address to do a work
@@ -42,7 +45,7 @@ func stopCommand() []byte {
 }
 
 func cpuUnitStatusCommand() []byte {
-	commandData := make([]byte, 2, 2)
+	commandData := make([]byte, 2)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeCPUUnitStatusRead)
 	return commandData
 }
@@ -87,7 +90,7 @@ const (
 )
 
 func parameterAreaReadCommand(parameterArea ParameterArea, beginningWord uint16, numberOfWords uint16) []byte {
-	commandData := make([]byte, 8, 8)
+	commandData := make([]byte, 8)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeParameterAreaRead)
 	binary.BigEndian.PutUint16(commandData[2:4], uint16(parameterArea))
 	binary.BigEndian.PutUint16(commandData[4:6], beginningWord)
@@ -97,13 +100,13 @@ func parameterAreaReadCommand(parameterArea ParameterArea, beginningWord uint16,
 }
 
 func clockReadCommand() []byte {
-	commandData := make([]byte, 2, 2)
+	commandData := make([]byte, 2)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeClockRead)
 	return commandData
 }
 
 func clockWriteCommand(year, month, day, hour, minute, second, dayOfWeek byte) []byte {
-	commandData := make([]byte, 9, 9)
+	commandData := make([]byte, 9)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeClockWrite)
 	commandData[2] = year
 	commandData[3] = month
@@ -116,7 +119,7 @@ func clockWriteCommand(year, month, day, hour, minute, second, dayOfWeek byte) [
 }
 
 func cycleTimeCommand(subCommand byte) []byte {
-	commandData := make([]byte, 3, 3)
+	commandData := make([]byte, 3)
 	binary.BigEndian.PutUint16(commandData[0:2], CommandCodeCycleTimeRead)
 	commandData[2] = subCommand
 	return commandData
@@ -131,7 +134,7 @@ func cycleTimeReadCommand() []byte {
 }
 
 func encodeMemoryAddress(memoryAddr memoryAddress) []byte {
-	bytes := make([]byte, 4, 4)
+	bytes := make([]byte, 4)
 	bytes[0] = byte(memoryAddr.memoryArea)
 	binary.BigEndian.PutUint16(bytes[1:3], memoryAddr.address)
 	bytes[3] = memoryAddr.bitOffset
@@ -153,7 +156,7 @@ func decodeRequest(bytes []byte) request {
 func encodeResponse(resp response) []byte {
 	bytes := make([]byte, 4, 4+len(resp.data))
 	binary.BigEndian.PutUint16(bytes[0:2], resp.commandCode)
-	binary.BigEndian.PutUint16(bytes[2:4], resp.endCode)
+	binary.BigEndian.PutUint16(bytes[2:4], uint16(resp.endCode))
 	bytes = append(bytes, resp.data...)
 	bh := encodeHeader(resp.hdr)
 	bh = append(bh, bytes...)
@@ -161,11 +164,15 @@ func encodeResponse(resp response) []byte {
 }
 
 func decodeResponse(bytes []byte) response {
+	endCodeRaw := binary.BigEndian.Uint16(bytes[12:14])
 	return response{
 		decodeHeader(bytes[0:10]),
 		binary.BigEndian.Uint16(bytes[10:12]),
-		binary.BigEndian.Uint16(bytes[12:14]),
+		EndCode(endCodeRaw & 0x7f3f),
 		bytes[14:],
+		(endCodeRaw & (1 << 15)) != 0,
+		(endCodeRaw & (1 << 7)) != 0,
+		(endCodeRaw & (1 << 6)) != 0,
 	}
 }
 
@@ -178,7 +185,7 @@ const (
 func encodeHeader(hdr header) []byte {
 	var icf byte
 	icf = 1 << icfBridgesBit
-	if hdr.responseRequired == false {
+	if !hdr.responseRequired {
 		icf |= 1 << icfResponseRequiredBit
 	}
 	if hdr.messageType == messageTypeResponse {

@@ -4,16 +4,17 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"net"
 
-	"github.com/l1va/gofins/fins"
+	"github.com/siyka-au/gofins/fins"
 )
 
 func main() {
 
 	//clientAddr := fins.NewAddress("192.168.250.10", 9600, 0, 34, 0)
 	//plcAddr := fins.NewAddress("192.168.250.1", 9601, 0, 0, 0)
-	clientAddr := fins.NewAddress("127.0.0.1", 9600, 0, 34, 0)
-	plcAddr := fins.NewAddress("127.0.0.1", 9601, 0, 0, 0)
+	clientAddr := fins.NewAddress(net.ParseIP("127.0.0.1"), 9600, 0, 34, 0)
+	plcAddr := fins.NewAddress(net.ParseIP("127.0.0.1"), 9601, 0, 0, 0)
 
 	s, e := fins.NewPLCSimulator(plcAddr)
 	if e != nil {
@@ -58,7 +59,7 @@ func main() {
 	// s, _ := c.ReadString(fins.MemoryAreaDMWord, 10000, 10)
 	// fmt.Println("D10000: " + *s)
 
-	zee, ee := c.ReadBytes(fins.MemoryAreaDMWord, 10000, 146)
+	c.ReadBytes(fins.MemoryAreaDMWord, 10000, 146)
 
 	// b, _ := c.ReadBits(fins.MemoryAreaDMWord, 10473, 2, 1)
 	// fmt.Println(b)
