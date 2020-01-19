@@ -22,7 +22,7 @@ type response struct {
 	nonFataCPUError bool
 }
 
-// A plc memory address to do a work
+// A PLC memory address
 type memoryAddress struct {
 	memoryArea MemoryArea
 	address    uint16
