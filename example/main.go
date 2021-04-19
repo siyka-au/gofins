@@ -3,23 +3,22 @@ package main
 import (
 	"fmt"
 	"log"
-	"net"
 	"time"
 
-	"github.com/siyka-au/gofins/fins"
+	fins "github.com/siyka-au/gofins"
 )
 
 func main() {
 
 	plcAddr := "192.168.250.10:9600"
-	conn, err := net.Dial("udp", plcAddr)
+	provider, err := fins.NewUDPClientProvider(plcAddr)
 
 	if err != nil {
-		log.Fatal(err)
-		panic(fmt.Sprintf("Error resolving UDP port: %s\n", plcAddr))
+		log.Fatal()
+		panic(fmt.Sprintf("failed to connect to PLC at %v", plcAddr))
 	}
 
-	c := fins.NewClient(&conn, fins.Address{
+	c := fins.NewClient(provider, fins.Address{
 		Network: 0,
 		Node:    10,
 		Unit:    0,
@@ -28,7 +27,7 @@ func main() {
 		Node:    2,
 		Unit:    0,
 	})
-	defer c.CloseConnection()
+	defer c.Close()
 
 	// z, _ := c.ReadWords(fins.MemoryAreaDMWord, 24000, 2)
 	// fmt.Println(z)
@@ -53,4 +52,7 @@ func main() {
 	// c.ResetBit(fins.MemoryAreaDMBit, 24003, 0)
 	// c.ToggleBit(fins.MemoryAreaDMBit, 24003, 2)
 	c.WriteString(fins.MemoryAreaDMWord, 10000, 10, "WeLoveGoLang!")
+
+	t, _ = c.ReadClock()
+	fmt.Println(t.Format(time.RFC3339))
 }

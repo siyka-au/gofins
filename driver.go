@@ -29,7 +29,7 @@ func writeCommand(ioAddr IOAddress, itemCount uint16, bytes []byte) *Payload {
 }
 
 func encodeIOAddress(ioAddr IOAddress) []byte {
-	bytes := make([]byte, 4, 4)
+	bytes := make([]byte, 4)
 	bytes[0] = ioAddr.MemoryArea
 	binary.BigEndian.PutUint16(bytes[1:3], ioAddr.Address)
 	bytes[3] = ioAddr.BitOffset
@@ -94,8 +94,8 @@ func encodePayload(payload *Payload) []byte {
 	return bytes
 }
 
-var errBCDBadDigit = errors.New("Bad digit in BCD decoding")
-var errBCDOverflow = errors.New("Overflow occurred in BCD decoding")
+var errBCDBadDigit = errors.New("bad digit in BCD decoding")
+var errBCDOverflow = errors.New("overflow occurred in BCD decoding")
 
 func encodeBCD(x uint64) []byte {
 	if x == 0 {

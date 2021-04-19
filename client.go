@@ -1,47 +1,42 @@
 package fins
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"log"
-	"net"
 	"sync"
 	"time"
 )
 
 // Client Omron FINS client
 type Client struct {
-	conn net.Conn
-	resp []chan Frame
+	provider ClientProvider
+	dst      Address
+	src      Address
+	sid      byte
+
 	sync.Mutex
-	dst Address
-	src Address
-	sid byte
 }
 
 // NewClient creates a new Omron FINS client
-func NewClient(conn *net.Conn, dst Address, src Address) *Client {
+func NewClient(provider ClientProvider, dst Address, src Address) *Client {
 	c := new(Client)
+	c.provider = provider
 	c.dst = dst
 	c.src = src
-	c.conn = *conn
-	c.resp = make([]chan Frame, 256) //storage for all responses, sid is byte - only 256 values
-	go c.listenLoop()
 
 	return c
 }
 
 // CloseConnection Closes an Omron FINS connection
-func (c *Client) CloseConnection() {
-	c.conn.Close()
+func (c *Client) Close() {
+	c.provider.close()
 }
 
 // ReadWords Reads words from the PLC data area
 func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([]uint16, error) {
-	if checkIsWordMemoryArea(memoryArea) == false {
+	if !checkIsWordMemoryArea(memoryArea) {
 		return nil, ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
@@ -50,12 +45,12 @@ func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([
 		Address:    address,
 		BitOffset:  0x00,
 	}, readCount)
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return nil, e
 	}
 
-	data := make([]uint16, readCount, readCount)
+	data := make([]uint16, readCount)
 	for i := 0; i < int(readCount); i++ {
 		data[i] = binary.BigEndian.Uint16(r.Data[i*2 : i*2+2])
 	}
@@ -65,7 +60,7 @@ func (c *Client) ReadWords(memoryArea byte, address uint16, readCount uint16) ([
 
 // ReadString Reads a string from the PLC data area
 func (c *Client) ReadString(memoryArea byte, address uint16, readCount uint16) (*string, error) {
-	if checkIsWordMemoryArea(memoryArea) == false {
+	if !checkIsWordMemoryArea(memoryArea) {
 		return nil, ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
@@ -74,7 +69,7 @@ func (c *Client) ReadString(memoryArea byte, address uint16, readCount uint16) (
 		Address:    address,
 		BitOffset:  0x00,
 	}, readCount)
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return nil, e
 	}
@@ -86,7 +81,7 @@ func (c *Client) ReadString(memoryArea byte, address uint16, readCount uint16) (
 
 // ReadBits Reads bits from the PLC data area
 func (c *Client) ReadBits(memoryArea byte, address uint16, bitOffset byte, readCount uint16) ([]bool, error) {
-	if checkIsBitMemoryArea(memoryArea) == false {
+	if !checkIsBitMemoryArea(memoryArea) {
 		return nil, ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
@@ -95,12 +90,12 @@ func (c *Client) ReadBits(memoryArea byte, address uint16, bitOffset byte, readC
 		Address:    address,
 		BitOffset:  bitOffset,
 	}, readCount)
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return nil, e
 	}
 
-	data := make([]bool, readCount, readCount)
+	data := make([]bool, readCount)
 	for i := 0; i < int(readCount); i++ {
 		data[i] = r.Data[i]&0x01 > 0
 	}
@@ -114,7 +109,7 @@ func (c *Client) ReadClock() (*time.Time, error) {
 	command := new(Payload)
 	command.CommandCode = CommandCodeClockRead
 	command.Data = []byte{}
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return nil, e
 	}
@@ -141,12 +136,12 @@ func (c *Client) ReadClock() (*time.Time, error) {
 
 // WriteWords Writes words to the PLC data area
 func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) error {
-	if checkIsWordMemoryArea(memoryArea) == false {
+	if !checkIsWordMemoryArea(memoryArea) {
 		return ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
 	l := uint16(len(data))
-	bytes := make([]byte, 2*l, 2*l)
+	bytes := make([]byte, 2*l)
 	for i := 0; i < int(l); i++ {
 		binary.BigEndian.PutUint16(bytes[i*2:i*2+2], data[i])
 	}
@@ -156,12 +151,12 @@ func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) erro
 		BitOffset:  0x00,
 	}, l, bytes)
 
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return e
 	}
 	if r.EndCode != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
+		return fmt.Errorf("error reported by destination, end code 0x%x", r.EndCode)
 	}
 
 	return nil
@@ -169,11 +164,11 @@ func (c *Client) WriteWords(memoryArea byte, address uint16, data []uint16) erro
 
 // WriteString Writes a string to the PLC data area
 func (c *Client) WriteString(memoryArea byte, address uint16, itemCount uint16, s string) error {
-	if checkIsWordMemoryArea(memoryArea) == false {
+	if !checkIsWordMemoryArea(memoryArea) {
 		return ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
-	bytes := make([]byte, 2*itemCount, 2*itemCount)
+	bytes := make([]byte, 2*itemCount)
 	copy(bytes, s)
 	command := writeCommand(IOAddress{
 		MemoryArea: memoryArea,
@@ -181,12 +176,12 @@ func (c *Client) WriteString(memoryArea byte, address uint16, itemCount uint16, 
 		BitOffset:  0x00,
 	}, itemCount, bytes)
 
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return e
 	}
 	if r.EndCode != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
+		return fmt.Errorf("error reported by destination, end code 0x%x", r.EndCode)
 	}
 
 	return nil
@@ -194,7 +189,7 @@ func (c *Client) WriteString(memoryArea byte, address uint16, itemCount uint16, 
 
 // WriteBits Writes bits to the PLC data area
 func (c *Client) WriteBits(memoryArea byte, address uint16, bitOffset byte, data []bool) error {
-	if checkIsBitMemoryArea(memoryArea) == false {
+	if !checkIsBitMemoryArea(memoryArea) {
 		return ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
@@ -215,12 +210,12 @@ func (c *Client) WriteBits(memoryArea byte, address uint16, bitOffset byte, data
 		BitOffset:  bitOffset,
 	}, l, bytes)
 
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return e
 	}
 	if r.EndCode != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
+		return fmt.Errorf("error reported by destination, end code 0x%x", r.EndCode)
 	}
 
 	return nil
@@ -252,7 +247,7 @@ func (c *Client) ToggleBit(memoryArea byte, address uint16, bitOffset byte) erro
 }
 
 func (c *Client) bitTwiddle(memoryArea byte, address uint16, bitOffset byte, value byte) error {
-	if checkIsBitMemoryArea(memoryArea) == false {
+	if !checkIsBitMemoryArea(memoryArea) {
 		return ErrIncompatibleMemoryArea
 	}
 	header := c.nextHeader()
@@ -262,19 +257,19 @@ func (c *Client) bitTwiddle(memoryArea byte, address uint16, bitOffset byte, val
 		BitOffset:  bitOffset,
 	}, 1, []byte{value})
 
-	r, e := c.sendCommand(header, command)
+	r, e := c.provider.sendCommand(header, command)
 	if e != nil {
 		return e
 	}
 	if r.EndCode != EndCodeNormalCompletion {
-		return fmt.Errorf("Error reported by destination, end code 0x%x", r.EndCode)
+		return fmt.Errorf("error reported by destination, end code 0x%x", r.EndCode)
 	}
 
 	return nil
 }
 
 // ErrIncompatibleMemoryArea Error when the memory area is incompatible with the data type to be read
-var ErrIncompatibleMemoryArea = errors.New("The memory area is incompatible with the data type to be read")
+var ErrIncompatibleMemoryArea = errors.New("the memory area is incompatible with the data type to be read")
 
 func (c *Client) nextHeader() *Header {
 	sid := c.incrementSid()
@@ -284,48 +279,10 @@ func (c *Client) nextHeader() *Header {
 
 func (c *Client) incrementSid() byte {
 	c.Lock() //thread-safe sid incrementation
+	defer c.Unlock()
 	c.sid++
 	sid := c.sid
-	c.Unlock()
-	c.resp[sid] = make(chan Frame) //clearing cell of storage for new response
 	return sid
-}
-
-func (c *Client) sendCommand(header *Header, payload *Payload) (*Response, error) {
-	bytes := encodeFrame(NewFrame(header, payload))
-	_, err := c.conn.Write(bytes)
-	if err != nil {
-		return nil, err
-	}
-
-	r := <-c.resp[header.sid]
-	response := &Response{
-		CommandCode: r.Payload.CommandCode,
-		EndCode:     binary.BigEndian.Uint16(r.Payload.Data[:2]),
-		Data:        r.Payload.Data[2:],
-	}
-	return response, nil
-}
-
-func (c *Client) listenLoop() {
-	for {
-		buf := make([]byte, 2048)
-		n, err := bufio.NewReader(c.conn).Read(buf)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if n > 0 {
-			ans := decodeFrame(buf[0:n])
-			if err != nil {
-				log.Println("failed to parse response: ", err, " \nresponse: ", buf[0:n])
-			} else {
-				c.resp[ans.Header.sid] <- *ans
-			}
-		} else {
-			log.Println("Cannot read response: ", buf)
-		}
-	}
 }
 
 func checkIsWordMemoryArea(memoryArea byte) bool {
