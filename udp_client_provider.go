@@ -16,8 +16,8 @@ type UDPClientProvider struct {
 
 var _ ClientProvider = (*UDPClientProvider)(nil)
 
-func NewUDPClientProvider(plcAddr string) (*UDPClientProvider, error) {
-	conn, err := net.Dial("udp", plcAddr)
+func NewUDPClientProvider(plcAddr *net.UDPAddr) (*UDPClientProvider, error) {
+	conn, err := net.DialUDP("udp", nil, plcAddr)
 
 	if err != nil {
 		return nil, err
